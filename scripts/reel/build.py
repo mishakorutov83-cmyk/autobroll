@@ -49,7 +49,11 @@ def main():
     meta = json.load(open(work / "meta.json"))
     src = sorted(work.glob("source.*"))[0]
     speed = args.speed or getattr(edl, "SPEED", P.SPEED)
-    shots = {"N": P.N, "M": P.M, "C": P.C}
+    # shot code → (scale, subject). Subject None = largest face; "L"/"R" = left/right person,
+    # "both" = centre of the pair. An episode can add its own codes (e.g. virtual cameras
+    # on a static two-shot) via SHOTS = {"W": (1.45, "both"), "G": (1.9, "R")}.
+    shots = {"N": (P.N, None), "M": (P.M, None), "C": (P.C, None), **getattr(edl, "SHOTS", {})}
+    min_face = getattr(edl, "FACE_MIN_W", 0.12)
 
     T = json.load(open(work / "transcript.json"))
     WORDS = []
@@ -79,19 +83,28 @@ def main():
         dw, dh = P.W, int(round(sh * P.W / sw / 2) * 2)
     face_t = np.array([f["t"] for f in FACES])
 
-    def face_at(t):
+    def face_at(t, who=None):
         i = int(np.argmin(np.abs(face_t - t)))
         if abs(face_t[i] - t) > 0.13:
             return None
-        good = [z for z in FACES[i]["faces"] if z[2] > 0.12 and z[1] + z[3] / 2 < 0.5]
+        good = [(x + w / 2, y + h / 2, w) for x, y, w, h, _ in FACES[i]["faces"] if w > min_face and y + h / 2 < 0.5]
         if not good:
             return None
-        x, y, w, h, _ = max(good, key=lambda z: z[2])
-        return x + w / 2, y + h / 2
+        if who is None:
+            return max(good, key=lambda z: z[2])[:2]
+        left = [g for g in good if g[0] < 0.5]
+        right = [g for g in good if g[0] >= 0.5]
+        L = max(left, key=lambda z: z[2])[:2] if left else None
+        R = max(right, key=lambda z: z[2])[:2] if right else None
+        if who == "L":
+            return L
+        if who == "R":
+            return R
+        return ((L[0] + R[0]) / 2, (L[1] + R[1]) / 2) if L and R else None
 
-    def track(a, b):
+    def track(a, b, who=None):
         ts = np.arange(a, b + 0.001, 0.25)
-        pts = [face_at(t) for t in ts]
+        pts = [face_at(t, who) for t in ts]
         valid = [i for i, p in enumerate(pts) if p]
         if not valid:
             return ts, np.full(len(ts), 0.5), np.full(len(ts), 0.27)
@@ -144,6 +157,9 @@ def main():
 
     sel_rel = f"clips/{args.ep}_sel.mp4"
     sel_path = ROOT / "public" / sel_rel
+    ranges_file = work / "selects_ranges.json"
+    if args.no_media and (not ranges_file.exists() or json.load(open(ranges_file)) != ranges):
+        sys.exit("cut points moved outside the encoded selects — rebuild without --no-media")
     if not args.no_media:
         t0 = time.time()
         sel_path.parent.mkdir(parents=True, exist_ok=True)
@@ -162,6 +178,7 @@ def main():
         cmd += ["-filter_complex", ";".join(fc), "-map", "[vo]", "-map", "[ao]", "-c:v", "libx264", "-preset", "veryfast",
                 "-crf", "15", "-g", str(FPS), "-c:a", "aac", "-b:a", "192k", str(sel_path)]
         subprocess.run(cmd, check=True)
+        json.dump(ranges, open(ranges_file, "w"))
         print(f"selects: {len(ranges)} ranges, {acc:.0f}s of {meta['duration']:.0f}s source, {time.time() - t0:.0f}s", flush=True)
 
     # ---- 3. clips + captions -------------------------------------------------------------
@@ -169,21 +186,26 @@ def main():
     clips, captions, flags = [], [], []
     rows = list(edl.E) + ([("outro", outro[0], outro[1], "N", None, [], None)] if outro else [])
     for (cid, a, b, shot, text, acc_words, punch), (ia, ob) in zip(rows, cuts):
-        shot = shots.get(shot, shot) if isinstance(shot, str) else shot
-        punch = (punch[0], shots.get(punch[1], punch[1])) if punch else None
-        ts, xs, ys = track(ia, ob)
+        shot, who = shots[shot] if isinstance(shot, str) else (shot, None)
+        punch = (punch[0], *(shots[punch[1]] if isinstance(punch[1], str) else (punch[1], who))) if punch else None
+        tracks = {w: track(ia, ob, w) for w in {who, punch[2] if punch else who}}
 
         def scale_at(t):
             if isinstance(shot, tuple):
                 return shot[0] + (shot[1] - shot[0]) * (t - ia) / max(0.01, ob - ia)
             return punch[1] if punch and t >= punch[0] else shot
 
+        def who_at(t):
+            return punch[2] if punch and t >= punch[0] else who
+
         kts = sorted(set([round(t, 3) for t in np.arange(ia, ob + 0.001, 0.5)] + [ob] +
                          ([round(punch[0] - 1 / FPS, 3), round(punch[0], 3)] if punch else [])))
         kfs = []
         for t in kts:
+            tq = punch[0] - 0.5 if punch and abs(t - (punch[0] - 1 / FPS)) < 1e-3 else t
+            ts, xs, ys = tracks[who_at(tq)]
             i = int(np.argmin(np.abs(ts - t)))
-            s = scale_at(punch[0] - 0.5 if punch and abs(t - (punch[0] - 1 / FPS)) < 1e-3 else t)
+            s = scale_at(tq)
             x, y = xf(s, xs[i], ys[i])
             kfs.append({"t": to_sel(t), "scale": round(s, 4), "x": x, "y": y})
         clip = {"id": cid, "src": sel_rel, "label": (text or cid)[:28], "inSec": to_sel(ia), "outSec": to_sel(ob),
