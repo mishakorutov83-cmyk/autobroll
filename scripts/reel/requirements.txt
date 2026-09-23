@@ -1,0 +1,4 @@
+faster-whisper==1.2.1
+opencv-python-headless>=4.9
+numpy
+gdown

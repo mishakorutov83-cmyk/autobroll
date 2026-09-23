@@ -24,3 +24,6 @@ public/*
 
 # IDE
 .idea/
+
+# reel pipeline working dirs
+work/
