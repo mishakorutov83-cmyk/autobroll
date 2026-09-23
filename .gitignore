@@ -24,3 +24,7 @@ public/*
 
 # IDE
 .idea/
+
+# reel pipeline working dirs
+work/
+__pycache__/

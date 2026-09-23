@@ -15,7 +15,7 @@ export const RemotionRoot: React.FC = () => {
       fps={30}
       width={1080}
       height={1920}
-      defaultProps={{clips: [], music: null, captions: [], brolls: [], accentColor: '#FFB020'}}
+      defaultProps={{clips: [], music: null, captions: [], brolls: [], accentColor: '#FFB020', captionPreset: 'default', titles: []}}
       calculateMetadata={async ({props}) => {
         const fps = 30;
         const p = props as {clips?: unknown; music?: unknown; captions?: unknown; brolls?: unknown};
@@ -31,12 +31,13 @@ export const RemotionRoot: React.FC = () => {
           Array.isArray(p.brolls) && p.brolls.length
             ? p.brolls
             : await fetch(staticFile('broll.json')).then((r) => r.json()).catch(() => []);
+        const arr = (v: unknown) => (Array.isArray(v) ? v : []);
         return {
           fps,
           width: 1080,
           height: 1920,
           durationInFrames: totalDurationFrames(tl.clips, fps),
-          props: {...props, clips: tl.clips, music: tl.music, captions, brolls},
+          props: {...props, clips: arr(tl.clips), music: tl.music ?? null, captions: arr(captions), brolls: arr(brolls)},
         };
       }}
     />
