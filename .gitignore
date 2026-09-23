@@ -27,3 +27,4 @@ public/*
 
 # reel pipeline working dirs
 work/
+__pycache__/
