@@ -1,6 +1,7 @@
 import React from 'react';
 import {AbsoluteFill, Audio, OffthreadVideo, Video, Sequence, staticFile, useVideoConfig, useCurrentFrame, interpolate, getRemotionEnvironment} from 'remotion';
-import {CaptionTrack} from './CaptionTrack';
+import {CaptionTrack, type CaptionPreset} from './CaptionTrack';
+import {TitleLayer, projectTitles, useTitleFonts, type TitleItem} from './Titles';
 import {BrollLayer, projectBrolls, type BrollItem} from './Broll';
 import {projectCaptions, type Caption} from './captions';
 import {placeClips, sampleTransform, totalDurationFrames, type Clip, type Music} from './timeline';
@@ -13,6 +14,9 @@ const ClipMedia: React.FC<{clip: Clip; durFrames: number; Comp: React.ElementTyp
   // keyframe times are source-relative → advance source-time at `speed`
   const {scale, x, y} = sampleTransform(clip.transform, clip.inSec + (frame / fps) * speed);
   const trimBefore = Math.round(clip.inSec * fps);
+  // 1-frame gain ramps at both ends — no clicks at jump cuts
+  const gain = clip.muted ? 0 : clip.volume ?? 1;
+  const vol = (f: number) => gain * Math.min(1, (f + 1) / 2, (durFrames - f) / 2);
   return (
     <div
       data-ab={`clip:${clip.id}`}
@@ -27,7 +31,7 @@ const ClipMedia: React.FC<{clip: Clip; durFrames: number; Comp: React.ElementTyp
         trimAfter={trimBefore + Math.round(durFrames * speed)}
         acceptableTimeShiftInSeconds={0.5}
         muted={clip.muted || (clip.volume ?? 1) === 0}
-        volume={clip.muted ? 0 : clip.volume ?? 1}
+        volume={vol}
         style={{width: '100%', height: '100%', objectFit: 'cover'}}
       />
     </div>
@@ -75,13 +79,17 @@ export const MultiClipVideo: React.FC<{
   captions?: Caption[];
   brolls?: BrollItem[];
   accentColor?: string;
-}> = ({clips = [], music = null, captions = [], brolls = [], accentColor}) => {
+  captionPreset?: CaptionPreset;
+  titles?: TitleItem[];
+}> = ({clips = [], music = null, captions = [], brolls = [], accentColor, captionPreset = 'default', titles = []}) => {
   const {fps} = useVideoConfig();
   const placed = placeClips(clips, fps);
   const totalFrames = totalDurationFrames(clips, fps);
   // captions + b-roll are anchored to clips (source-relative) → project to absolute
   const projectedCaptions = projectCaptions(captions, clips, fps);
   const projectedBrolls = projectBrolls(brolls, clips, fps);
+  const projectedTitles = projectTitles(titles, clips, fps);
+  useTitleFonts(captionPreset === 'clean' || titles.length > 0);
 
   // OffthreadVideo is built for rendering (frame-accurate, but stutters/freezes
   // in the live Player). Use native <Video> in preview for smooth playback,
@@ -111,8 +119,16 @@ export const MultiClipVideo: React.FC<{
       {/* music */}
       {music && <MusicTrack music={music} totalFrames={totalFrames} speech={projectedCaptions.map((c) => [c.startMs, c.endMs])} />}
 
+      {/* soft shade under the caption zone (clean preset) */}
+      {captionPreset === 'clean' && projectedCaptions.length > 0 && (
+        <AbsoluteFill style={{background: 'linear-gradient(to bottom, rgba(0,0,0,0) 52%, rgba(0,0,0,0.34) 70%, rgba(0,0,0,0.42) 100%)'}} />
+      )}
+
+      {/* lower-thirds / end card */}
+      <TitleLayer items={projectedTitles} accentColor={accentColor ?? '#FFB020'} />
+
       {/* captions, always on top */}
-      <CaptionTrack captions={projectedCaptions} accentColor={accentColor} />
+      <CaptionTrack captions={projectedCaptions} accentColor={accentColor} preset={captionPreset} />
     </AbsoluteFill>
   );
 };
