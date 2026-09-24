@@ -16,3 +16,4 @@ for (const f of list.split(',').map(Number)) {
   await renderStill({serveUrl, composition, inputProps, frame: Math.min(f, composition.durationInFrames - 1), output});
   console.log(output);
 }
+fs.rmSync(serveUrl, {recursive: true, force: true}); // bundle holds a copy of public/

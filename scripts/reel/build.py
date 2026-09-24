@@ -83,6 +83,18 @@ def main():
         dw, dh = P.W, int(round(sh * P.W / sw / 2) * 2)
     face_t = np.array([f["t"] for f in FACES])
 
+    # ---- zoom cap: never stretch the source more than the face detail allows ------------
+    widths = [max(z[2] for z in f["faces"]) * sw for f in FACES if f["faces"]]
+    face_px = float(np.median(widths)) if widths else 0.0
+    max_mag = P.MAX_MAG_SMALL_FACE if face_px < P.FACE_DETAIL_PX else P.MAX_MAG
+    zoom_cap = max_mag / (dw / sw)
+    capped = {code: (sc, who) for code, (sc, who) in shots.items()
+              if isinstance(sc, (int, float)) and sc > zoom_cap + 1e-6}
+    if capped:
+        print(f"zoom cap: faces ≈{face_px:.0f}px in a {sw}px source → max ×{max_mag} "
+              f"(shot scale ≤ {zoom_cap:.2f}); capped: " + ", ".join(f"{c} {v[0]}" for c, v in capped.items()))
+    clamp = lambda v: min(v, zoom_cap)
+
     def face_at(t, who=None):
         i = int(np.argmin(np.abs(face_t - t)))
         if abs(face_t[i] - t) > 0.13:
@@ -158,7 +170,9 @@ def main():
     sel_rel = f"clips/{args.ep}_sel.mp4"
     sel_path = ROOT / "public" / sel_rel
     ranges_file = work / "selects_ranges.json"
-    if args.no_media and (not ranges_file.exists() or json.load(open(ranges_file)) != ranges):
+    if args.no_media and not ranges_file.exists():
+        print("warning: selects built before range tracking — assuming they match the edit list")
+    elif args.no_media and json.load(open(ranges_file)) != ranges:
         sys.exit("cut points moved outside the encoded selects — rebuild without --no-media")
     if not args.no_media:
         t0 = time.time()
@@ -192,8 +206,8 @@ def main():
 
         def scale_at(t):
             if isinstance(shot, tuple):
-                return shot[0] + (shot[1] - shot[0]) * (t - ia) / max(0.01, ob - ia)
-            return punch[1] if punch and t >= punch[0] else shot
+                return clamp(shot[0] + (shot[1] - shot[0]) * (t - ia) / max(0.01, ob - ia))
+            return clamp(punch[1] if punch and t >= punch[0] else shot)
 
         def who_at(t):
             return punch[2] if punch and t >= punch[0] else who
@@ -277,6 +291,18 @@ def main():
             captions.append({"id": f"{cid}_{pi}", "clipId": cid, "words": words,
                              "startMs": max(round(to_sel(ia) * 1000), words[0]["startMs"] - 60),
                              "endMs": words[-1]["endMs"], "topPct": P.CAPTION_TOP_PCT})
+
+    # a cut between two fragments that end/start in the same framing reads as a jump
+    prev = None
+    for row in edl.E:
+        cid, sh_, pu = row[0], row[3], row[6]
+        st = shots[sh_] if isinstance(sh_, str) else (sh_, None)
+        en = (shots[pu[1]] if isinstance(pu[1], str) else (pu[1], st[1])) if pu else st
+        st = (clamp(st[0]) if not isinstance(st[0], tuple) else st[0], st[1])
+        en = (clamp(en[0]) if not isinstance(en[0], tuple) else en[0], en[1])
+        if prev and prev[1] == st:
+            flags.append((cid, f"same framing as {prev[0]} across the cut — alternate the shot"))
+        prev = (cid, en)
 
     titles = [{"id": "lt", "kind": "lower", "clipId": edl.LOWER_THIRD_CLIP, "offsetSec": P.LOWER_THIRD_OFFSET,
                "durationSec": P.LOWER_THIRD_DUR, "title": edl.GUEST,

@@ -14,6 +14,13 @@ SPEED = 1.10
 # digital shot sizes: normal / medium / close-up (source is often a phone video —
 # keep zooms moderate so faces stay sharp and heads are not cut)
 N, M, C = 1.06, 1.16, 1.28
+# digital zoom is capped by how much the SOURCE pixels get stretched (cover-scale × shot scale).
+# Low-res sources with small faces (ep2: 464 px wide, faces ≈45 px) turned into visible blocks
+# at ×4.2–4.8, so: faces narrower than FACE_DETAIL_PX in the source → at most ×3.4, and no
+# separate close-up level; otherwise at most ×4.0. build.py clamps every shot and reports it.
+MAX_MAG = 4.0
+MAX_MAG_SMALL_FACE = 3.4
+FACE_DETAIL_PX = 80
 FACE_TARGET_Y = 0.30  # face centre height in the output frame
 FACE_KEEP_X = 0.30  # how much of the face's off-centre position is kept (0 = centre it)
 

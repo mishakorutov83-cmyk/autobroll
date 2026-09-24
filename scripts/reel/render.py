@@ -41,6 +41,9 @@ def main():
     run(["npx", "remotion", "render", "src/index.ts", "MultiClip", str(raw), f"--props={props}", "--codec=h264",
          "--crf=16", "--x264-preset=veryfast", "--jpeg-quality=95", "--audio-codec=aac", "--audio-bitrate=256k", f"--concurrency={cpus}", "--log=error"])
     t1 = time.time()
+    # every render bundles a copy of public/ (clips!) into /tmp — drop it, or the disk fills up
+    for d in Path("/tmp").glob("remotion-webpack-bundle-*"):
+        subprocess.run(["rm", "-rf", str(d)])
 
     # loudness: measure, then linear normalisation; video stream is copied
     meas = subprocess.run(["ffmpeg", "-hide_banner", "-i", str(raw), "-vn", "-af", P.LOUDNESS + ":print_format=json", "-f", "null", "-"],

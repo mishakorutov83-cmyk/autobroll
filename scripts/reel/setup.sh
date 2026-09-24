@@ -27,6 +27,20 @@ done
 [ -s "$CACHE/yunet.onnx" ] || curl -fsSL -o "$CACHE/yunet.onnx" \
   "https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
 
+# isolated venv for dialogue restoration (restore_audio.py): DeepFilterNet needs torch 2.2 + numpy<2,
+# which must not leak into the main Python used by the pipeline
+V="$CACHE/dfn-venv"
+if ! "$V/bin/python" -c "import df, nara_wpe, torch" 2>/dev/null; then
+  python3 -m venv "$V"
+  "$V/bin/pip" install -q torch==2.2.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cpu
+  "$V/bin/pip" install -q deepfilternet nara_wpe scipy soundfile "numpy<2"
+fi
+if [ ! -f "$HOME/.cache/DeepFilterNet/DeepFilterNet3/config.ini" ]; then
+  mkdir -p "$HOME/.cache/DeepFilterNet" && curl -fsSL -o /tmp/DeepFilterNet3.zip \
+    https://raw.githubusercontent.com/Rikorose/DeepFilterNet/main/models/DeepFilterNet3.zip &&
+    unzip -oq /tmp/DeepFilterNet3.zip -d "$HOME/.cache/DeepFilterNet" && rm /tmp/DeepFilterNet3.zip
+fi
+
 # pre-download the Whisper model so the first transcription starts immediately
 python3 - <<PY
 import sys; sys.path.insert(0, "scripts/reel")
