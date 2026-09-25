@@ -87,7 +87,18 @@ def main():
     widths = [max(z[2] for z in f["faces"]) * sw for f in FACES if f["faces"]]
     face_px = float(np.median(widths)) if widths else 0.0
     max_mag = P.MAX_MAG_SMALL_FACE if face_px < P.FACE_DETAIL_PX else P.MAX_MAG
-    zoom_cap = max_mag / (dw / sw)
+    # LAYOUT = "split": stacked panels (top → bottom = PANELS subjects), for landscape sources
+    # whose 9:16 full-frame crop alone would already exceed the magnification cap
+    split = getattr(edl, "LAYOUT", None) == "split"
+    panel_who = getattr(edl, "PANELS", ["R", "L"])
+    PW, PH = P.W, (P.H - 4 * (len(panel_who) - 1)) / len(panel_who)
+    pk = max(PW / sw, PH / sh)
+    pdw, pdh = sw * pk, sh * pk
+    zoom_cap = max_mag / (pk if split else dw / sw)
+    if zoom_cap < 1:
+        print(f"WARNING: a full-frame 9:16 crop already stretches this {sw}x{sh} source ×{dw / sw:.2f} "
+              f"(> ×{max_mag}); consider LAYOUT = 'split' in edl.py")
+        zoom_cap = 1.0
     capped = {code: (sc, who) for code, (sc, who) in shots.items()
               if isinstance(sc, (int, float)) and sc > zoom_cap + 1e-6}
     if capped:
@@ -125,6 +136,14 @@ def main():
         k = 7
         sm = lambda v: np.convolve(np.pad(v, k // 2, mode="edge"), np.ones(k) / k, mode="valid")
         return ts, sm(xs), sm(ys)
+
+    def xf_panel(s, cx, cy):
+        ox = (cx * pdw - (pdw - PW) / 2) / PW
+        oy = (cy * pdh - (pdh - PH) / 2) / PH
+        lim = (s - 1) / 2
+        tx = np.clip(0.5 + (ox - 0.5) * P.FACE_KEEP_X - (0.5 + (ox - 0.5) * s), -lim, lim)
+        ty = np.clip(getattr(edl, "PANEL_FACE_Y", 0.40) - (0.5 + (oy - 0.5) * s), -lim, lim)
+        return round(float(tx) * 100, 2), round(float(ty) * 100, 2)
 
     def xf(s, cx, cy):
         ox = (cx * dw - (dw - P.W) / 2) / P.W
@@ -186,7 +205,10 @@ def main():
             fc.append(f"[{i}:v]fps={FPS},tpad=stop_mode=clone:stop=15,trim=end_frame={round(d * FPS)},setpts=N/{FPS}/TB[v{i}]")
             fc.append(f"[{i}:a]aresample=48000,apad,atrim=0:{d:.4f},asetpts=N/SR/TB[a{i}]")
         fc.append("".join(f"[v{i}][a{i}]" for i in range(len(ranges))) + f"concat=n={len(ranges)}:v=1:a=1[cv][ca]")
-        vf = f"scale={dw}:{dh}:flags=lanczos" + (",unsharp=5:5:0.5:5:5:0.0" if upscale else "") + ",setsar=1,format=yuv420p"
+        # split panels only need the panel's cover size, not a full 9:16 cover (half the pixels)
+        ew, eh = (int(round(pdw / 2) * 2), int(round(pdh / 2) * 2)) if split else (dw, dh)
+        upscale = ew > sw
+        vf = f"scale={ew}:{eh}:flags=lanczos" + (",unsharp=5:5:0.5:5:5:0.0" if upscale else "") + ",setsar=1,format=yuv420p"
         fc.append(f"[cv]{vf}[vo]")
         fc.append(f"[ca]{P.AUDIO_FILTER}[ao]")
         cmd += ["-filter_complex", ";".join(fc), "-map", "[vo]", "-map", "[ao]", "-c:v", "libx264", "-preset", "veryfast",
@@ -222,9 +244,25 @@ def main():
             s = scale_at(tq)
             x, y = xf(s, xs[i], ys[i])
             kfs.append({"t": to_sel(t), "scale": round(s, 4), "x": x, "y": y})
+        panels = None
+        if split:
+            panels = []
+            for pw_ in panel_who:
+                ts_, xs_, ys_ = track(ia, ob, pw_)
+                pk_ = []
+                for t in kts:
+                    tq = punch[0] - 0.5 if punch and abs(t - (punch[0] - 1 / FPS)) < 1e-3 else t
+                    i = int(np.argmin(np.abs(ts_ - t)))
+                    sc_ = scale_at(tq)
+                    x, y = xf_panel(sc_, xs_[i], ys_[i])
+                    pk_.append({"t": to_sel(t), "scale": round(sc_, 4), "x": x, "y": y})
+                panels.append(pk_)
         clip = {"id": cid, "src": sel_rel, "label": (text or cid)[:28], "inSec": to_sel(ia), "outSec": to_sel(ob),
                 "sourceDurationSec": round(acc, 3), "transform": kfs, "volume": 1,
                 "speed": 1 if text is None else speed}
+        if panels:
+            clip["panels"] = panels
+            clip["transform"] = []
         if text is None:
             clip["muted"] = True
         clips.append(clip)
@@ -290,7 +328,7 @@ def main():
                       "accent": toks[j] in acc_words} for j in p]
             captions.append({"id": f"{cid}_{pi}", "clipId": cid, "words": words,
                              "startMs": max(round(to_sel(ia) * 1000), words[0]["startMs"] - 60),
-                             "endMs": words[-1]["endMs"], "topPct": P.CAPTION_TOP_PCT})
+                             "endMs": words[-1]["endMs"], "topPct": getattr(edl, "CAPTION_TOP_PCT", P.CAPTION_TOP_PCT)})
 
     # a cut between two fragments that end/start in the same framing reads as a jump
     prev = None
@@ -307,6 +345,8 @@ def main():
     titles = [{"id": "lt", "kind": "lower", "clipId": edl.LOWER_THIRD_CLIP, "offsetSec": P.LOWER_THIRD_OFFSET,
                "durationSec": P.LOWER_THIRD_DUR, "title": edl.GUEST,
                "subtitle": getattr(edl, "GUEST_SUB", P.LOWER_THIRD_SUB)}]
+    if hasattr(edl, "LOWER_THIRD_TOP"):
+        titles[0]["topPct"] = edl.LOWER_THIRD_TOP
     if outro:
         titles.append({"id": "end", "kind": "end", "clipId": "outro", "offsetSec": 0, "durationSec": P.END_DUR,
                        "title": P.END_TITLE, "subtitle": P.END_SUB})

@@ -14,6 +14,9 @@ export type Clip = {
   outSec: number; // trim: end offset inside the source
   sourceDurationSec: number; // full length of the source (trim bounds)
   transform?: Keyframe[]; // keyframes (by source-time) for zoom/pan animation
+  // stacked split-screen: one panel per entry (top → bottom), each with its own
+  // zoom/pan keyframes; used when a landscape source can't fill 9:16 sharply
+  panels?: Keyframe[][];
   volume?: number; // clip audio gain, 1 = original
   muted?: boolean; // hard-mute the clip's own audio
   speed?: number; // playback rate (0.25..4), 1 = normal; timeline duration = source/speed

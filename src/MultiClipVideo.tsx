@@ -17,6 +17,35 @@ const ClipMedia: React.FC<{clip: Clip; durFrames: number; Comp: React.ElementTyp
   // 1-frame gain ramps at both ends — no clicks at jump cuts
   const gain = clip.muted ? 0 : clip.volume ?? 1;
   const vol = (f: number) => gain * Math.min(1, (f + 1) / 2, (durFrames - f) / 2);
+  const media = (withAudio: boolean) => (
+    <Comp
+      src={staticFile(clip.src)}
+      playbackRate={speed}
+      trimBefore={trimBefore}
+      trimAfter={trimBefore + Math.round(durFrames * speed)}
+      acceptableTimeShiftInSeconds={0.5}
+      muted={!withAudio || clip.muted || (clip.volume ?? 1) === 0}
+      volume={withAudio ? vol : 0}
+      style={{width: '100%', height: '100%', objectFit: 'cover'}}
+    />
+  );
+  if (clip.panels?.length) {
+    const t = clip.inSec + (frame / fps) * speed;
+    return (
+      <div data-ab={`clip:${clip.id}`} style={{width: '100%', height: '100%', display: 'flex', flexDirection: 'column', gap: 4, background: '#0c0c0e'}}>
+        {clip.panels.map((kfs, i) => {
+          const p = sampleTransform(kfs, t);
+          return (
+            <div key={i} style={{flex: 1, overflow: 'hidden', position: 'relative'}}>
+              <div style={{width: '100%', height: '100%', transform: `translate(${p.x}%, ${p.y}%) scale(${p.scale})`, transformOrigin: 'center'}}>
+                {media(i === 0)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
   return (
     <div
       data-ab={`clip:${clip.id}`}
@@ -120,9 +149,16 @@ export const MultiClipVideo: React.FC<{
       {music && <MusicTrack music={music} totalFrames={totalFrames} speech={projectedCaptions.map((c) => [c.startMs, c.endMs])} />}
 
       {/* soft shade under the caption zone (clean preset) */}
-      {captionPreset === 'clean' && projectedCaptions.length > 0 && (
-        <AbsoluteFill style={{background: 'linear-gradient(to bottom, rgba(0,0,0,0) 52%, rgba(0,0,0,0.34) 70%, rgba(0,0,0,0.42) 100%)'}} />
-      )}
+      {captionPreset === 'clean' && projectedCaptions.length > 0 && (() => {
+        // captions low in the frame → shade the bottom; captions mid-frame (split layout,
+        // at the panel seam) → a soft band behind them instead
+        const top = projectedCaptions[0].topPct;
+        const bg =
+          top >= 55
+            ? 'linear-gradient(to bottom, rgba(0,0,0,0) 52%, rgba(0,0,0,0.34) 70%, rgba(0,0,0,0.42) 100%)'
+            : `linear-gradient(to bottom, rgba(0,0,0,0) ${top - 8}%, rgba(0,0,0,0.52) ${top + 1}%, rgba(0,0,0,0.52) ${top + 8}%, rgba(0,0,0,0) ${top + 16}%)`;
+        return <AbsoluteFill style={{background: bg}} />;
+      })()}
 
       {/* lower-thirds / end card */}
       <TitleLayer items={projectedTitles} accentColor={accentColor ?? '#FFB020'} />

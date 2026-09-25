@@ -13,6 +13,7 @@ export type TitleItem = {
   durationSec: number;
   title: string;
   subtitle?: string;
+  topPct?: number; // lower-third position (default 49 %)
 };
 
 export const TITLE_FONT = '"AB Inter", Inter, -apple-system, system-ui, sans-serif';
@@ -60,7 +61,7 @@ const LowerThird: React.FC<{item: TitleItem; dur: number; accent: string}> = ({i
   const subP = interpolate(frame, [fps * 0.15, fps * 0.6], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: ease});
   const out = interpolate(frame, [dur - fps * 0.35, dur], [1, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
   return (
-    <div style={{position: 'absolute', left: 84, top: '49%', opacity: out, fontFamily: TITLE_FONT}}>
+    <div style={{position: 'absolute', left: 84, top: `${item.topPct ?? 49}%`, opacity: out, fontFamily: TITLE_FONT}}>
       <div style={{display: 'flex', alignItems: 'stretch', gap: 22}}>
         <div style={{width: 6, borderRadius: 3, background: accent, transform: `scaleY(${inP})`, transformOrigin: 'top'}} />
         <div style={{overflow: 'hidden', padding: '4px 0'}}>
