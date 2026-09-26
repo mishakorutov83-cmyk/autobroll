@@ -17,6 +17,9 @@ export type Clip = {
   // stacked split-screen: one panel per entry (top → bottom), each with its own
   // zoom/pan keyframes; used when a landscape source can't fill 9:16 sharply
   panels?: Keyframe[][];
+  // horizontal position (0–100 %) of the 9:16 window inside a wider (landscape) source;
+  // default 50 = centre. Lets a static two-shot be cut into per-person "cameras".
+  focusX?: number;
   volume?: number; // clip audio gain, 1 = original
   muted?: boolean; // hard-mute the clip's own audio
   speed?: number; // playback rate (0.25..4), 1 = normal; timeline duration = source/speed

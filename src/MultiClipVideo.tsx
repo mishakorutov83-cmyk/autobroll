@@ -26,7 +26,7 @@ const ClipMedia: React.FC<{clip: Clip; durFrames: number; Comp: React.ElementTyp
       acceptableTimeShiftInSeconds={0.5}
       muted={!withAudio || clip.muted || (clip.volume ?? 1) === 0}
       volume={withAudio ? vol : 0}
-      style={{width: '100%', height: '100%', objectFit: 'cover'}}
+      style={{width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${clip.focusX ?? 50}% 50%`}}
     />
   );
   if (clip.panels?.length) {
@@ -61,7 +61,7 @@ const ClipMedia: React.FC<{clip: Clip; durFrames: number; Comp: React.ElementTyp
         acceptableTimeShiftInSeconds={0.5}
         muted={clip.muted || (clip.volume ?? 1) === 0}
         volume={vol}
-        style={{width: '100%', height: '100%', objectFit: 'cover'}}
+        style={{width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${clip.focusX ?? 50}% 50%`}}
       />
     </div>
   );

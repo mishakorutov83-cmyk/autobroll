@@ -9,7 +9,7 @@
   3. HPF 85 Hz, −3 dB @220 Hz (mud), +2.5 dB @3.2 kHz (presence), light de-ess,
      3:1 compression, voice levelling, limiter
   4. new audio muxed into public/clips/<ep>_sel_r.mp4 (video stream copied), props switched to it,
-     host clips (shot subject "L" or edl.HOST_CLIPS) gain-matched to the guest.
+     host clips (shot subject edl.HOST_SIDE, default "L", or edl.HOST_CLIPS) gain-matched to the guest.
 Speed/pitch stay in Remotion; loudness (−14 LUFS) is done by render.py.
 The WPE/DeepFilterNet step runs in the isolated venv made by setup.sh (torch 2.2 + deepfilternet).
 """
@@ -31,10 +31,10 @@ import sys, numpy as np, soundfile as sf, torch
 from nara_wpe.wpe import wpe
 from nara_wpe.utils import stft, istft
 from df.enhance import init_df, enhance
-inp, out, lim = sys.argv[1], sys.argv[2], float(sys.argv[3])
+inp, out, lim, taps = sys.argv[1], sys.argv[2], float(sys.argv[3]), int(sys.argv[4])
 x, sr = sf.read(inp, dtype="float64")
 Y = stft(x[None], size=1024, shift=256).transpose(2, 0, 1)
-z = istft(wpe(Y, taps=10, delay=3, iterations=3, statistics_mode="full").transpose(1, 2, 0), size=1024, shift=256)[0][: len(x)]
+z = istft(wpe(Y, taps=taps, delay=3, iterations=3, statistics_mode="full").transpose(1, 2, 0), size=1024, shift=256)[0][: len(x)]
 z = (z / max(1.0, np.abs(z).max())).astype("float32")
 model, state, _ = init_df()
 y = enhance(model, state, torch.from_numpy(z)[None], atten_lim_db=lim)[0].numpy()
@@ -78,11 +78,21 @@ def main():
     # 2. WPE + DeepFilterNet3 (isolated venv)
     script = work / "_enhance.py"
     script.write_text(ENHANCE)
-    sh(str(VENV_PY), str(script), str(raw), str(enh), str(DFN_LIMIT_DB))
+    # per-episode tuning (edl.AUDIO): dfn_db (suppression cap), wpe_taps (dereverb strength), post (ffmpeg chain)
+    cfg = getattr(edl, "AUDIO", {})
+    sh(str(VENV_PY), str(script), str(raw), str(enh), str(cfg.get("dfn_db", DFN_LIMIT_DB)), str(cfg.get("wpe_taps", 10)))
     script.unlink()
 
     # 3. post chain
-    sh("ffmpeg", "-y", "-v", "error", "-i", str(enh), "-af", POST, str(fin))
+    post_tmp = work / "sel_post.wav"
+    sh("ffmpeg", "-y", "-v", "error", "-i", str(enh), "-af", cfg.get("post", POST), str(post_tmp))
+    # static gain to a sane working level (−20 LUFS): a very quiet track would otherwise go through
+    # AAC at −40 LUFS and get +26 dB at mastering, lifting codec noise with it
+    meas = subprocess.run(["ffmpeg", "-hide_banner", "-i", str(post_tmp), "-af", "ebur128", "-f", "null", "-"],
+                          capture_output=True, text=True).stderr
+    li = float(meas[meas.rindex("I:"):].split()[1])
+    sh("ffmpeg", "-y", "-v", "error", "-i", str(post_tmp), "-af", f"volume={-20 - li:.2f}dB,alimiter=limit=0.95:level=false", str(fin))
+    post_tmp.unlink()
 
     # 4. mux + props
     sel = ROOT / "public" / "clips" / f"{ep}_sel.mp4"
@@ -92,8 +102,10 @@ def main():
     props_path = ROOT / "public" / f"{ep}.props.json"
     props = json.load(open(props_path))
     shots = getattr(edl, "SHOTS", {})
-    host = set(getattr(edl, "HOST_CLIPS", [])) | {r[0] for r in edl.E if isinstance(r[3], str) and shots.get(r[3], (0, None))[1] == "L"}
-    guest = {r[0] for r in edl.E if isinstance(r[3], str) and shots.get(r[3], (0, None))[1] == "R"}
+    hs = getattr(edl, "HOST_SIDE", "L")   # side of the source frame the host sits on
+    gs = {"L": "R", "R": "L"}[hs]
+    host = set(getattr(edl, "HOST_CLIPS", [])) | {r[0] for r in edl.E if isinstance(r[3], str) and shots.get(r[3], (0, None))[1] == hs}
+    guest = {r[0] for r in edl.E if isinstance(r[3], str) and shots.get(r[3], (0, None))[1] == gs} - host
     w = wave.open(str(fin))
     x = np.frombuffer(w.readframes(w.getnframes()), np.int16).astype(float) / 32768
     sr = w.getframerate()

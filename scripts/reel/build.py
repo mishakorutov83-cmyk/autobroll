@@ -207,6 +207,10 @@ def main():
         fc.append("".join(f"[v{i}][a{i}]" for i in range(len(ranges))) + f"concat=n={len(ranges)}:v=1:a=1[cv][ca]")
         # split panels only need the panel's cover size, not a full 9:16 cover (half the pixels)
         ew, eh = (int(round(pdw / 2) * 2), int(round(pdh / 2) * 2)) if split else (dw, dh)
+        if sh >= 1000 and ew > sw:
+            # HD source: keep native pixels — a 1080p landscape frame pre-stretched to a 9:16
+            # cover (3413×1920) only bloats the file and the render cache; Chrome scales it
+            ew, eh = sw - sw % 2, sh - sh % 2
         upscale = ew > sw
         vf = f"scale={ew}:{eh}:flags=lanczos" + (",unsharp=5:5:0.5:5:5:0.0" if upscale else "") + ",setsar=1,format=yuv420p"
         fc.append(f"[cv]{vf}[vo]")
@@ -236,13 +240,33 @@ def main():
 
         kts = sorted(set([round(t, 3) for t in np.arange(ia, ob + 0.001, 0.5)] + [ob] +
                          ([round(punch[0] - 1 / FPS, 3), round(punch[0], 3)] if punch else [])))
+        # landscape source, single-person shot: slide the 9:16 window to the subject
+        # (objectPosition), then track/zoom inside that window as usual
+        focus_off = (dw - P.W) / 2
+        clip_focus = None
+        if not split and dw > P.W * 1.2 and who in ("L", "R"):
+            if punch and punch[2] != who:
+                flags.append((cid, "punch changes the subject on a landscape source — use a separate clip"))
+            ts0, xs0, _ = tracks[who]
+            want = float(np.median(xs0)) * dw - P.W / 2
+            focus_off = float(np.clip(want, 0, dw - P.W))
+            clip_focus = round(100 * focus_off / (dw - P.W), 2)
+
+        def xf_f(s_, cx, cy):
+            ox = (cx * dw - focus_off) / P.W
+            oy = (cy * dh - (dh - P.H) / 2) / P.H
+            lim = (s_ - 1) / 2
+            tx = np.clip(0.5 + (ox - 0.5) * P.FACE_KEEP_X - (0.5 + (ox - 0.5) * s_), -lim, lim)
+            ty = np.clip(P.FACE_TARGET_Y - (0.5 + (oy - 0.5) * s_), -lim, lim)
+            return round(float(tx) * 100, 2), round(float(ty) * 100, 2)
+
         kfs = []
         for t in kts:
             tq = punch[0] - 0.5 if punch and abs(t - (punch[0] - 1 / FPS)) < 1e-3 else t
             ts, xs, ys = tracks[who_at(tq)]
             i = int(np.argmin(np.abs(ts - t)))
             s = scale_at(tq)
-            x, y = xf(s, xs[i], ys[i])
+            x, y = xf_f(s, xs[i], ys[i])
             kfs.append({"t": to_sel(t), "scale": round(s, 4), "x": x, "y": y})
         panels = None
         if split:
@@ -260,6 +284,8 @@ def main():
         clip = {"id": cid, "src": sel_rel, "label": (text or cid)[:28], "inSec": to_sel(ia), "outSec": to_sel(ob),
                 "sourceDurationSec": round(acc, 3), "transform": kfs, "volume": 1,
                 "speed": 1 if text is None else speed}
+        if clip_focus is not None:
+            clip["focusX"] = clip_focus
         if panels:
             clip["panels"] = panels
             clip["transform"] = []
