@@ -17,7 +17,7 @@ const ClipMedia: React.FC<{clip: Clip; durFrames: number; Comp: React.ElementTyp
   // 1-frame gain ramps at both ends — no clicks at jump cuts
   const gain = clip.muted ? 0 : clip.volume ?? 1;
   const vol = (f: number) => gain * Math.min(1, (f + 1) / 2, (durFrames - f) / 2);
-  const media = (withAudio: boolean) => (
+  const media = (withAudio: boolean, fx = clip.focusX ?? 50) => (
     <Comp
       src={staticFile(clip.src)}
       playbackRate={speed}
@@ -26,7 +26,7 @@ const ClipMedia: React.FC<{clip: Clip; durFrames: number; Comp: React.ElementTyp
       acceptableTimeShiftInSeconds={0.5}
       muted={!withAudio || clip.muted || (clip.volume ?? 1) === 0}
       volume={withAudio ? vol : 0}
-      style={{width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${clip.focusX ?? 50}% 50%`}}
+      style={{width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${fx}% 50%`}}
     />
   );
   if (clip.panels?.length) {
@@ -38,7 +38,7 @@ const ClipMedia: React.FC<{clip: Clip; durFrames: number; Comp: React.ElementTyp
           return (
             <div key={i} style={{flex: 1, overflow: 'hidden', position: 'relative'}}>
               <div style={{width: '100%', height: '100%', transform: `translate(${p.x}%, ${p.y}%) scale(${p.scale})`, transformOrigin: 'center'}}>
-                {media(i === 0)}
+                {media(i === 0, clip.panelFocusX?.[i])}
               </div>
             </div>
           );

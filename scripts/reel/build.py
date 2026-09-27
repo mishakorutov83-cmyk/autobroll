@@ -137,8 +137,8 @@ def main():
         sm = lambda v: np.convolve(np.pad(v, k // 2, mode="edge"), np.ones(k) / k, mode="valid")
         return ts, sm(xs), sm(ys)
 
-    def xf_panel(s, cx, cy):
-        ox = (cx * pdw - (pdw - PW) / 2) / PW
+    def xf_panel(s, cx, cy, off=None):
+        ox = (cx * pdw - ((pdw - PW) / 2 if off is None else off)) / PW
         oy = (cy * pdh - (pdh - PH) / 2) / PH
         lim = (s - 1) / 2
         tx = np.clip(0.5 + (ox - 0.5) * P.FACE_KEEP_X - (0.5 + (ox - 0.5) * s), -lim, lim)
@@ -270,15 +270,20 @@ def main():
             kfs.append({"t": to_sel(t), "scale": round(s, 4), "x": x, "y": y})
         panels = None
         if split:
-            panels = []
+            panels, pfocus = [], []
             for pw_ in panel_who:
                 ts_, xs_, ys_ = track(ia, ob, pw_)
+                # wide source (HD two-shot): slide each panel's window to its subject
+                off = None
+                if pdw > PW * 1.2:
+                    off = float(np.clip(float(np.median(xs_)) * pdw - PW / 2, 0, pdw - PW))
+                pfocus.append(50 if off is None else round(100 * off / (pdw - PW), 2))
                 pk_ = []
                 for t in kts:
                     tq = punch[0] - 0.5 if punch and abs(t - (punch[0] - 1 / FPS)) < 1e-3 else t
                     i = int(np.argmin(np.abs(ts_ - t)))
                     sc_ = scale_at(tq)
-                    x, y = xf_panel(sc_, xs_[i], ys_[i])
+                    x, y = xf_panel(sc_, xs_[i], ys_[i], off)
                     pk_.append({"t": to_sel(t), "scale": round(sc_, 4), "x": x, "y": y})
                 panels.append(pk_)
         clip = {"id": cid, "src": sel_rel, "label": (text or cid)[:28], "inSec": to_sel(ia), "outSec": to_sel(ob),
@@ -288,6 +293,8 @@ def main():
             clip["focusX"] = clip_focus
         if panels:
             clip["panels"] = panels
+            if any(f != 50 for f in pfocus):
+                clip["panelFocusX"] = pfocus
             clip["transform"] = []
         if text is None:
             clip["muted"] = True

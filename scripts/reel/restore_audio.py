@@ -106,6 +106,8 @@ def main():
     gs = {"L": "R", "R": "L"}[hs]
     host = set(getattr(edl, "HOST_CLIPS", [])) | {r[0] for r in edl.E if isinstance(r[3], str) and shots.get(r[3], (0, None))[1] == hs}
     guest = {r[0] for r in edl.E if isinstance(r[3], str) and shots.get(r[3], (0, None))[1] == gs} - host
+    if not guest and getattr(edl, "HOST_CLIPS", None):   # split / two-shot: everything else is the guest
+        guest = {r[0] for r in edl.E if r[4]} - host
     w = wave.open(str(fin))
     x = np.frombuffer(w.readframes(w.getnframes()), np.int16).astype(float) / 32768
     sr = w.getframerate()
