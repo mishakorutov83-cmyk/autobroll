@@ -382,7 +382,7 @@ def main():
         titles[0]["topPct"] = edl.LOWER_THIRD_TOP
     if outro:
         titles.append({"id": "end", "kind": "end", "clipId": "outro", "offsetSec": 0, "durationSec": P.END_DUR,
-                       "title": P.END_TITLE, "subtitle": P.END_SUB})
+                       "title": getattr(edl, "END_TITLE", P.END_TITLE), "subtitle": getattr(edl, "END_SUB", P.END_SUB)})
     props = {"clips": clips, "music": None, "captions": captions, "brolls": [], "accentColor": P.ACCENT,
              "captionPreset": P.CAPTION_PRESET, "titles": titles}
     json.dump(props, open(ROOT / "public" / f"{args.ep}.props.json", "w"), ensure_ascii=False, indent=1)
