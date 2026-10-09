@@ -13,6 +13,7 @@ const ClipMedia: React.FC<{clip: Clip; durFrames: number; Comp: React.ElementTyp
   const speed = clip.speed ?? 1;
   // keyframe times are source-relative → advance source-time at `speed`
   const {scale, x, y} = sampleTransform(clip.transform, clip.inSec + (frame / fps) * speed);
+  const kick = clip.kick ? 1 + clip.kick * interpolate(frame, [0, fps * 0.25], [1, 0], {extrapolateRight: 'clamp', easing: (t) => 1 - (1 - t) ** 3}) : 1;
   const trimBefore = Math.round(clip.inSec * fps);
   // 1-frame gain ramps at both ends — no clicks at jump cuts
   const gain = clip.muted ? 0 : clip.volume ?? 1;
@@ -49,7 +50,7 @@ const ClipMedia: React.FC<{clip: Clip; durFrames: number; Comp: React.ElementTyp
   return (
     <div
       data-ab={`clip:${clip.id}`}
-      style={{width: '100%', height: '100%', overflow: 'hidden', transform: `translate(${x}%, ${y}%) scale(${scale})`, transformOrigin: 'center'}}
+      style={{width: '100%', height: '100%', overflow: 'hidden', transform: `translate(${x}%, ${y}%) scale(${scale * kick})`, transformOrigin: 'center'}}
     >
       <Comp
         src={staticFile(clip.src)}

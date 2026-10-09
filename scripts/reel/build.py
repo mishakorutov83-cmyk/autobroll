@@ -383,6 +383,24 @@ def main():
     if outro:
         titles.append({"id": "end", "kind": "end", "clipId": "outro", "offsetSec": 0, "durationSec": P.END_DUR,
                        "title": getattr(edl, "END_TITLE", P.END_TITLE), "subtitle": getattr(edl, "END_SUB", P.END_SUB)})
+    # effects (edl, optional): KICK — clip ids that open with a fast zoom settle;
+    # FLASH — clip ids that open with a white flash; POPS — keyword stickers at source times:
+    # (t, dur, title, subtitle, topPct, tilt)
+    kick = getattr(edl, "KICK", {})
+    for c in clips:
+        if c["id"] in kick:
+            c["kick"] = kick[c["id"]] if isinstance(kick, dict) else 0.08
+    for cid in getattr(edl, "FLASH", []):
+        titles.append({"id": f"fl_{cid}", "kind": "flash", "clipId": cid, "offsetSec": 0, "durationSec": 0.2, "title": ""})
+    spans = {row[0]: (ia, ob) for row, (ia, ob) in zip(rows, cuts)}
+    for i, (t, dur, title, sub, top, tilt, *clip_id) in enumerate(getattr(edl, "POPS", [])):
+        # the 7th item names the clip when the same source time is used twice (hook + body)
+        host = clip_id[0] if clip_id else next((cid for cid, (ia, ob) in spans.items() if ia <= t < ob), None)
+        if host is None:
+            flags.append((f"pop {title!r}", f"source time {t} is not inside any clip"))
+            continue
+        titles.append({"id": f"pop{i}", "kind": "pop", "clipId": host, "offsetSec": round((t - spans[host][0]) / speed, 3),
+                       "durationSec": dur, "title": title, "subtitle": sub, "topPct": top, "tilt": tilt})
     props = {"clips": clips, "music": None, "captions": captions, "brolls": [], "accentColor": P.ACCENT,
              "captionPreset": P.CAPTION_PRESET, "titles": titles}
     json.dump(props, open(ROOT / "public" / f"{args.ep}.props.json", "w"), ensure_ascii=False, indent=1)

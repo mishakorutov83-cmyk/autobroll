@@ -20,7 +20,8 @@ export type Clip = {
   // horizontal position (0–100 %) of the 9:16 window inside a wider (landscape) source;
   // default 50 = centre. Lets a static two-shot be cut into per-person "cameras".
   focusX?: number;
-  panelFocusX?: number[]; // per-panel objectPosition X (split layout, wide sources)
+  panelFocusX?: number[];
+  kick?: number; // extra zoom at the clip's first frame, settling to 0 over ~0.25 s (e.g. 0.08) // per-panel objectPosition X (split layout, wide sources)
   volume?: number; // clip audio gain, 1 = original
   muted?: boolean; // hard-mute the clip's own audio
   speed?: number; // playback rate (0.25..4), 1 = normal; timeline duration = source/speed

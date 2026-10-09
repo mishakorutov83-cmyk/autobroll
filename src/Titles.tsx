@@ -7,13 +7,14 @@ import {placeClips, type Clip} from './timeline';
 // timeline), so they move with the clip when it is reordered or trimmed.
 export type TitleItem = {
   id: string;
-  kind: 'lower' | 'end';
+  kind: 'lower' | 'end' | 'pop' | 'flash';
   clipId: string; // anchor clip
   offsetSec: number; // start, relative to the anchor clip's start on the timeline
   durationSec: number;
   title: string;
   subtitle?: string;
-  topPct?: number; // lower-third position (default 49 %)
+  topPct?: number; // lower-third / pop position (default 49 % / 30 %)
+  tilt?: number; // pop: rotation in degrees
 };
 
 export const TITLE_FONT = '"AB Inter", Inter, -apple-system, system-ui, sans-serif';
@@ -101,6 +102,43 @@ const LowerThird: React.FC<{item: TitleItem; dur: number; accent: string}> = ({i
   );
 };
 
+
+// Pop callout: a bold keyword sticker that springs in (overshoot), sits, then fades —
+// for the key facts of a fast edit (company name, offer, platforms).
+const PopCallout: React.FC<{item: TitleItem; dur: number; accent: string}> = ({item, dur, accent}) => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const inP = interpolate(frame, [0, fps * 0.28], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.bezier(0.34, 1.56, 0.64, 1)});
+  const subP = interpolate(frame, [fps * 0.12, fps * 0.42], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: ease});
+  const out = interpolate(frame, [dur - fps * 0.25, dur], [1, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
+  const outScale = interpolate(frame, [dur - fps * 0.25, dur], [1, 0.9], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
+  const tilt = item.tilt ?? -3;
+  return (
+    <AbsoluteFill style={{alignItems: 'center', fontFamily: TITLE_FONT, opacity: out}}>
+      <div style={{position: 'absolute', top: `${item.topPct ?? 30}%`, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16,
+                   transform: `rotate(${tilt}deg) scale(${(0.55 + 0.45 * inP) * outScale})`, opacity: Math.min(1, inP * 1.6)}}>
+        <div style={{background: accent, color: '#111', fontSize: item.title.length <= 4 ? 150 : 74, fontWeight: 800, letterSpacing: 1.5, lineHeight: 1.05, padding: '18px 36px 20px',
+                     borderRadius: 22, textAlign: 'center', whiteSpace: 'pre-line', boxShadow: '0 14px 40px rgba(0,0,0,0.45)', maxWidth: 940}}>
+          {item.title}
+        </div>
+        {item.subtitle && (
+          <div style={{background: 'rgba(12,12,14,0.82)', color: '#fff', fontSize: 38, fontWeight: 700, padding: '10px 24px 12px', borderRadius: 14,
+                       transform: `translateY(${(1 - subP) * 18}px)`, opacity: subP, textAlign: 'center', whiteSpace: 'pre-line', maxWidth: 900}}>
+            {item.subtitle}
+          </div>
+        )}
+      </div>
+    </AbsoluteFill>
+  );
+};
+
+// Flash: a short white flash over a hard cut (topic change)
+const Flash: React.FC<{dur: number}> = ({dur}) => {
+  const frame = useCurrentFrame();
+  const o = interpolate(frame, [0, 1, dur], [0.85, 0.7, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
+  return <AbsoluteFill style={{background: '#fff', opacity: o}} />;
+};
+
 const EndCard: React.FC<{item: TitleItem; dur: number; accent: string}> = ({item, accent}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
@@ -141,7 +179,10 @@ export const TitleLayer: React.FC<{items: Array<TitleItem & {from: number; dur: 
   <>
     {items.map((it) => (
       <Sequence key={it.id} from={it.from} durationInFrames={it.dur} name={`title:${it.title}`}>
-        {it.kind === 'end' ? <EndCard item={it} dur={it.dur} accent={accentColor} /> : <LowerThird item={it} dur={it.dur} accent={accentColor} />}
+        {it.kind === 'end' ? <EndCard item={it} dur={it.dur} accent={accentColor} />
+          : it.kind === 'pop' ? <PopCallout item={it} dur={it.dur} accent={accentColor} />
+          : it.kind === 'flash' ? <Flash dur={it.dur} />
+          : <LowerThird item={it} dur={it.dur} accent={accentColor} />}
       </Sequence>
     ))}
   </>
