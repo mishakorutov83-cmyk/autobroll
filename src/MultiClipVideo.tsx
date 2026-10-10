@@ -23,7 +23,7 @@ const ClipMedia: React.FC<{clip: Clip; durFrames: number; Comp: React.ElementTyp
       src={staticFile(clip.src)}
       playbackRate={speed}
       trimBefore={trimBefore}
-      trimAfter={trimBefore + Math.round(durFrames * speed)}
+      trimAfter={trimBefore + Math.round(durFrames * Math.max(speed, 1))}
       acceptableTimeShiftInSeconds={0.5}
       muted={!withAudio || clip.muted || (clip.volume ?? 1) === 0}
       volume={withAudio ? vol : 0}
@@ -58,7 +58,7 @@ const ClipMedia: React.FC<{clip: Clip; durFrames: number; Comp: React.ElementTyp
         trimBefore={trimBefore}
         // source frames consumed = timeline frames × speed (keeps the trimmed
         // span exactly as long as the Sequence — no black tail frame)
-        trimAfter={trimBefore + Math.round(durFrames * speed)}
+        trimAfter={trimBefore + Math.round(durFrames * Math.max(speed, 1))}
         acceptableTimeShiftInSeconds={0.5}
         muted={clip.muted || (clip.volume ?? 1) === 0}
         volume={vol}
