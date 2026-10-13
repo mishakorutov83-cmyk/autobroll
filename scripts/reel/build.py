@@ -380,6 +380,10 @@ def main():
                "subtitle": getattr(edl, "GUEST_SUB", P.LOWER_THIRD_SUB)}]
     if hasattr(edl, "LOWER_THIRD_TOP"):
         titles[0]["topPct"] = edl.LOWER_THIRD_TOP
+    # extra name-plate style captions: (clip id, offset s, duration s, title, subtitle)
+    for i, (cid, off, dur, ti, sub) in enumerate(getattr(edl, "LOWER_EXTRA", [])):
+        titles.append({"id": f"lt{i + 1}", "kind": "lower", "clipId": cid, "offsetSec": off, "durationSec": dur,
+                       "title": ti, "subtitle": sub, **({"topPct": edl.LOWER_THIRD_TOP} if hasattr(edl, "LOWER_THIRD_TOP") else {})})
     if outro:
         titles.append({"id": "end", "kind": "end", "clipId": "outro", "offsetSec": 0, "durationSec": P.END_DUR,
                        "title": getattr(edl, "END_TITLE", P.END_TITLE), "subtitle": getattr(edl, "END_SUB", P.END_SUB)})
