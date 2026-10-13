@@ -163,6 +163,12 @@ def main():
         ia = o[0] if o[0] is not None else ia
         ob = o[1] if o[1] is not None else ob
         cuts.append((fr(ia), fr(ob)))
+    # adjacent rows that are contiguous in the source must not overlap after snapping —
+    # an overlap replays the end of a word («…класс? / -класс? Да») and sounds like a stutter
+    for (r0, (a0, b0)), (r1, (a1, b1)) in zip(zip(edl.E, cuts), zip(edl.E[1:], cuts[1:])):
+        if 0 < b0 - a1 < 2.0:
+            print(f"WARNING: {r0[0]} → {r1[0]} overlap {b0 - a1:.2f}s in the source (doubled syllable) — "
+                  f"merge them into one clip (punch for the framing change) or set equal OVR points")
     outro = getattr(edl, "OUTRO", None)  # muted tail under the end card
     if outro:
         cuts.append((fr(outro[0]), fr(outro[1])))
