@@ -7,7 +7,7 @@ import {placeClips, type Clip} from './timeline';
 // timeline), so they move with the clip when it is reordered or trimmed.
 export type TitleItem = {
   id: string;
-  kind: 'lower' | 'end' | 'pop' | 'flash';
+  kind: 'lower' | 'end' | 'pop' | 'flash' | 'schedule';
   clipId: string; // anchor clip
   offsetSec: number; // start, relative to the anchor clip's start on the timeline
   durationSec: number;
@@ -15,7 +15,10 @@ export type TitleItem = {
   subtitle?: string;
   topPct?: number; // lower-third / pop position (default 49 % / 30 %)
   tilt?: number; // pop: rotation in degrees
+  rows?: ScheduleRow[]; // schedule: one row per day
 };
+
+export type ScheduleRow = {day: string; date: string; event: string; note?: string | null; time: string};
 
 export const TITLE_FONT = '"AB Inter", Inter, -apple-system, system-ui, sans-serif';
 
@@ -175,11 +178,61 @@ const EndCard: React.FC<{item: TitleItem; dur: number; accent: string}> = ({item
   );
 };
 
+// Schedule: the end card as a programme of the week — one row per day, rows slide in one by one
+const ScheduleCard: React.FC<{item: TitleItem; dur: number; accent: string}> = ({item, accent}) => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const bg = interpolate(frame, [0, fps * 0.5], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
+  const head = interpolate(frame, [fps * 0.15, fps * 0.7], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: ease});
+  const rows = item.rows ?? [];
+  return (
+    <AbsoluteFill style={{fontFamily: TITLE_FONT}}>
+      <AbsoluteFill style={{backdropFilter: `blur(${bg * 24}px)`, background: `rgba(8,8,10,${bg * 0.72})`}} />
+      <AbsoluteFill style={{alignItems: 'center', justifyContent: 'center', padding: '0 48px 140px'}}>
+        <div style={{fontSize: 92, fontWeight: 800, letterSpacing: 3, color: '#fff', textAlign: 'center', lineHeight: 1.05,
+                     whiteSpace: 'pre-line', opacity: head, transform: `translateY(${(1 - head) * 20}px)`}}>
+          {item.title}
+        </div>
+        <div style={{width: 120 * head, height: 5, borderRadius: 3, background: accent, margin: '30px 0 40px'}} />
+        <div style={{display: 'flex', flexDirection: 'column', gap: 28, width: '100%'}}>
+          {rows.map((r, i) => {
+            const p = interpolate(frame, [fps * (0.5 + i * 0.16), fps * (0.95 + i * 0.16)], [0, 1],
+                                  {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: ease});
+            return (
+              <div key={i} style={{display: 'flex', alignItems: 'center', gap: 26, background: 'rgba(255,255,255,0.08)',
+                                   border: '1px solid rgba(255,255,255,0.14)', borderRadius: 26, padding: '28px 30px',
+                                   opacity: p, transform: `translateX(${(1 - p) * 60}px)`}}>
+                <div style={{width: 150, flexShrink: 0, textAlign: 'center'}}>
+                  <div style={{fontSize: 54, fontWeight: 800, color: accent, lineHeight: 1}}>{r.day}</div>
+                  <div style={{fontSize: 34, fontWeight: 600, color: 'rgba(255,255,255,0.8)', marginTop: 8}}>{r.date}</div>
+                </div>
+                <div style={{flex: 1, minWidth: 0}}>
+                  <div style={{fontSize: 52, fontWeight: 800, color: '#fff', lineHeight: 1.1}}>{r.event}</div>
+                  {r.note && <div style={{fontSize: 34, fontWeight: 500, color: 'rgba(255,255,255,0.8)', marginTop: 8, lineHeight: 1.2}}>{r.note}</div>}
+                </div>
+                <div style={{flexShrink: 0, background: accent, color: '#111', fontSize: 48, fontWeight: 800, borderRadius: 14,
+                             padding: '8px 16px 10px'}}>{r.time}</div>
+              </div>
+            );
+          })}
+        </div>
+        {item.subtitle && (
+          <div style={{marginTop: 44, fontSize: 42, fontWeight: 600, color: 'rgba(255,255,255,0.9)', textAlign: 'center',
+                       opacity: interpolate(frame, [fps * 1.4, fps * 1.9], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'})}}>
+            {item.subtitle}
+          </div>
+        )}
+      </AbsoluteFill>
+    </AbsoluteFill>
+  );
+};
+
 export const TitleLayer: React.FC<{items: Array<TitleItem & {from: number; dur: number}>; accentColor: string}> = ({items, accentColor}) => (
   <>
     {items.map((it) => (
       <Sequence key={it.id} from={it.from} durationInFrames={it.dur} name={`title:${it.title}`}>
         {it.kind === 'end' ? <EndCard item={it} dur={it.dur} accent={accentColor} />
+          : it.kind === 'schedule' ? <ScheduleCard item={it} dur={it.dur} accent={accentColor} />
           : it.kind === 'pop' ? <PopCallout item={it} dur={it.dur} accent={accentColor} />
           : it.kind === 'flash' ? <Flash dur={it.dur} />
           : <LowerThird item={it} dur={it.dur} accent={accentColor} />}

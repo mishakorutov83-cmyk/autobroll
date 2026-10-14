@@ -391,8 +391,13 @@ def main():
         titles.append({"id": f"lt{i + 1}", "kind": "lower", "clipId": cid, "offsetSec": off, "durationSec": dur,
                        "title": ti, "subtitle": sub, **({"topPct": edl.LOWER_THIRD_TOP} if hasattr(edl, "LOWER_THIRD_TOP") else {})})
     if outro:
-        titles.append({"id": "end", "kind": "end", "clipId": "outro", "offsetSec": 0, "durationSec": P.END_DUR,
+        titles.append({"id": "end", "kind": "end", "clipId": "outro", "offsetSec": 0,
+                       "durationSec": getattr(edl, "END_DUR", P.END_DUR),
                        "title": getattr(edl, "END_TITLE", P.END_TITLE), "subtitle": getattr(edl, "END_SUB", P.END_SUB)})
+        # SCHEDULE (edl, optional): the end card becomes a programme — [(day, date, event, note, time)]
+        if hasattr(edl, "SCHEDULE"):
+            titles[-1].update(kind="schedule", rows=[dict(zip(("day", "date", "event", "note", "time"), r))
+                                                     for r in edl.SCHEDULE])
     # effects (edl, optional): KICK — clip ids that open with a fast zoom settle;
     # FLASH — clip ids that open with a white flash; POPS — keyword stickers at source times:
     # (t, dur, title, subtitle, topPct, tilt)
