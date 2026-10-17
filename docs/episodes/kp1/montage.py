@@ -1,4 +1,4 @@
-"""Караоке сегодня 20:00–02:00 — promo for the Telegram group, ~39 s.
+"""Караоке сегодня 20:00–02:00 — promo for the Telegram group, 15 s (v2; v1 was 39 s).
 
 Message: the place where НАШИ gather — sing and hear favourite songs, live talk, familiar food,
 new friends, rest with friends. Six phone clips (1080×1920): t table, guests singing «Нет, я
@@ -17,7 +17,7 @@ SOURCES = {
     "f": "raw/IMG_1726.MOV",
 }
 GRADE = "eq=saturation=1.18:contrast=1.06:gamma=0.98,unsharp=5:5:0.35:5:5:0"
-XFADE = 0.25
+XFADE = 0.12
 KICK = 0.05
 SHOTS, AUDIO = [], []
 
@@ -27,27 +27,27 @@ def sync(src, t_in, dur, gain=0, **k):
     AUDIO.append((src, t_in, dur, gain))
 
 
-sync("t", 35.8, 6.0, zoom=(1.00, 1.08), focus=(0.4, 0.62))                          # «Нет, я молодой, просто седой»
-sync("o", 10.7, 6.3, zoom=(1.30, 1.42), focus=(0.5, 0.42), kick=KICK, flash=True)   # «Останусь пеплом на губах…»
-sync("g", 19.5, 4.0, gain=7, zoom=(1.15, 1.25), focus=(0.42, 0.52), kick=KICK)     # guitar
-sync("w", 4.0, 4.0, gain=3, zoom=(1.25, 1.33), focus=(0.45, 0.45), kick=KICK)      # woman, beige shirt
-sync("m", 0.0, 4.0, zoom=(1.35, 1.45), focus=(0.5, 0.45), kick=KICK)               # «Сердечный пульс…»
-sync("f", 0.0, 5.0, gain=3.5, zoom=(1.00, 1.08), focus=(0.45, 0.62), kick=KICK)    # friends at the table
-sync("t", 45.3, 6.0, zoom=(1.05, 1.15), focus=(0.45, 0.62), kick=KICK, flash=True) # «Нет, я не другой, я всё такой»
+sync("t", 36.0, 2.3, zoom=(1.00, 1.06), focus=(0.4, 0.62))                          # «Нет, я молодой…»
+sync("o", 10.8, 1.9, zoom=(1.30, 1.38), focus=(0.5, 0.42), kick=KICK, flash=True)   # «Останусь пеплом…»
+sync("g", 19.5, 1.6, gain=7, zoom=(1.15, 1.22), focus=(0.42, 0.52), kick=KICK)     # guitar
+sync("w", 4.6, 1.6, gain=3, zoom=(1.25, 1.31), focus=(0.45, 0.45), kick=KICK)      # woman, beige shirt
+sync("m", 0.0, 1.6, zoom=(1.35, 1.42), focus=(0.5, 0.45), kick=KICK)               # «Сердечный пульс…»
+sync("f", 0.3, 1.6, gain=3.5, zoom=(1.00, 1.06), focus=(0.45, 0.62), kick=KICK)    # friends at the table
+sync("t", 45.3, 1.9, zoom=(1.05, 1.12), focus=(0.45, 0.62), kick=KICK, flash=True) # «Нет, я не другой…»
 # end card over the table, the chorus keeps going underneath
-sync("t", 51.3, 3.6, zoom=(1.00, 1.06), focus=(0.5, 0.55))
+sync("t", 47.2, 2.6, zoom=(1.00, 1.05), focus=(0.5, 0.55))
 
 TOP = 9
 _t = [0.0]
 for s in SHOTS[:-1]:
     _t.append(_t[-1] + s["dur"])
 POPS = [
-    (_t[0] + 0.3, 5.2, "МЕСТО, ГДЕ\nСОБИРАЮТСЯ НАШИ", "«Наше место»", TOP, 0),
-    (_t[1] + 0.4, 5.4, "ПОЁМ ОТ ДУШИ", "любимые песни", TOP, 0),
-    (_t[2] + 0.3, 3.4, "ЖИВОЕ ОБЩЕНИЕ", None, TOP, 0),
-    (_t[3] + 0.3, 3.4, "СЛУШАЕМ\nЛЮБИМЫЕ ПЕСНИ", None, TOP, 0),
-    (_t[4] + 0.3, 3.4, "НОВЫЕ ЗНАКОМСТВА", None, TOP, 0),
-    (_t[5] + 0.3, 4.4, "ВКУСНАЯ\nПРИВЫЧНАЯ ЕДА", None, TOP, 0),
-    (_t[6] + 0.4, 5.3, "ОТДЫХ\nС ДРУЗЬЯМИ", None, TOP, 0),
+    (_t[0] + 0.1, 2.15, "МЕСТО, ГДЕ\nСОБИРАЮТСЯ НАШИ", "«Наше место»", TOP, 0),
+    (_t[1] + 0.1, 1.75, "ПОЁМ ОТ ДУШИ", None, TOP, 0),
+    (_t[2] + 0.05, 1.5, "ЖИВОЕ ОБЩЕНИЕ", None, TOP, 0),
+    (_t[3] + 0.05, 1.5, "ЛЮБИМЫЕ ПЕСНИ", None, TOP, 0),
+    (_t[4] + 0.05, 1.5, "НОВЫЕ ЗНАКОМСТВА", None, TOP, 0),
+    (_t[5] + 0.05, 1.5, "ВКУСНАЯ\nПРИВЫЧНАЯ ЕДА", None, TOP, 0),
+    (_t[6] + 0.1, 1.75, "ОТДЫХ\nС ДРУЗЬЯМИ", None, TOP, 0),
 ]
-END = ("КАРАОКЕ СЕГОДНЯ\n17 ОКТЯБРЯ", "20:00 – 02:00 • «Наше место»", 3.6)
+END = ("КАРАОКЕ СЕГОДНЯ\n17 ОКТЯБРЯ", "20:00 – 02:00 • «Наше место»", 2.6)
