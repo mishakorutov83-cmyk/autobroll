@@ -54,11 +54,13 @@ def main():
         print(f"proxy {k}: {fps} fps")
 
     # 2. live-sound mix: sequential segments with short crossfades (ends padded so durations add up)
-    X = 0.06
+    # optional 4th item = gain in dB (quiet takes); XFADE (s) = crossfade between segments (default 60 ms)
+    X = getattr(m, "XFADE", 0.06)
     cmd, fc = ["ffmpeg", "-nostdin", "-y", "-v", "error"], []
-    for i, (k, t, d) in enumerate(m.AUDIO):
+    for i, (k, t, d, *g) in enumerate(m.AUDIO):
         cmd += ["-ss", f"{max(0, t - X / 2):.3f}", "-t", f"{d + X + 0.5:.3f}", "-i", str(work / m.SOURCES[k])]
-        fc.append(f"[{i}:a]aresample=48000,aformat=channel_layouts=stereo,apad,atrim=0:{d + X:.4f},asetpts=N/SR/TB[a{i}]")
+        fc.append(f"[{i}:a]aresample=48000,aformat=channel_layouts=stereo,volume={g[0] if g else 0}dB,"
+                  f"apad,atrim=0:{d + X:.4f},asetpts=N/SR/TB[a{i}]")
     chain = "[a0]"
     for i in range(1, len(m.AUDIO)):
         fc.append(f"{chain}[a{i}]acrossfade=d={X}:c1=tri:c2=tri[x{i}]")
@@ -69,7 +71,7 @@ def main():
               f"apad,atrim=0:{total:.4f}[mix]")
     mix = clips_dir / f"{ep}_mix.wav"
     subprocess.run(cmd + ["-filter_complex", ";".join(fc), "-map", "[mix]", "-c:a", "pcm_s16le", str(mix)], check=True)
-    audio_len = sum(d for _, _, d in m.AUDIO)
+    audio_len = sum(a[2] for a in m.AUDIO)
     if abs(audio_len - total) > 0.05:
         print(f"WARNING: audio {audio_len:.2f}s vs picture {total:.2f}s")
 
