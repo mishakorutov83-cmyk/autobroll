@@ -75,11 +75,22 @@ def main():
     raw, enh, fin = work / "sel_raw_mono.wav", work / "sel_enh.wav", work / "sel_restored.wav"
     sh(*cmd, "-filter_complex", ";".join(fc), "-map", "[ca]", "-c:a", "pcm_s16le", str(raw))
 
+    # per-episode tuning (edl.AUDIO): dfn_db (suppression cap), wpe_taps (dereverb strength), post (ffmpeg chain),
+    # pre_gain {clip id: dB} — a speaker recorded much quieter is raised BEFORE denoise/compression, so the
+    # whole chain sees both voices at one level (the post-chain levelling below is capped at ±4 dB)
+    cfg = getattr(edl, "AUDIO", {})
+    pre = cfg.get("pre_gain", {})
+    if pre:
+        props0 = json.load(open(ROOT / "public" / f"{ep}.props.json"))
+        vol = ",".join(f"volume=enable='between(t,{c['inSec']:.3f},{c['outSec']:.3f})':volume={pre[c['id']]}dB"
+                       for c in props0["clips"] if c["id"] in pre)
+        tmp = work / "sel_raw_pre.wav"
+        sh("ffmpeg", "-y", "-v", "error", "-i", str(raw), "-af", vol, str(tmp))
+        tmp.replace(raw)
+
     # 2. WPE + DeepFilterNet3 (isolated venv)
     script = work / "_enhance.py"
     script.write_text(ENHANCE)
-    # per-episode tuning (edl.AUDIO): dfn_db (suppression cap), wpe_taps (dereverb strength), post (ffmpeg chain)
-    cfg = getattr(edl, "AUDIO", {})
     sh(str(VENV_PY), str(script), str(raw), str(enh), str(cfg.get("dfn_db", DFN_LIMIT_DB)), str(cfg.get("wpe_taps", 10)))
     script.unlink()
 
