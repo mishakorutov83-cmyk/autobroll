@@ -1,17 +1,74 @@
 import React from 'react';
 import {useCurrentFrame, useVideoConfig, interpolate, Sequence} from 'remotion';
 import type {Caption} from './captions';
-import {TITLE_FONT} from './Titles';
+import {TITLE_FONT, SERIF_FONT} from './Titles';
 
 export type {Caption} from './captions';
 
 const FONT = 'Inter, -apple-system, system-ui, sans-serif';
 const ACCENT = '#FFB020';
 
-// 'default' — the original look (active word pops, dimmed rest).
-// 'clean'   — calmer interview style: Inter, no per-word scaling, words brighten
-//             as they are spoken, accents only by weight/colour/size.
-export type CaptionPreset = 'default' | 'clean';
+// 'default'   — the original look (active word pops, dimmed rest).
+// 'clean'     — calmer interview style: Inter, no per-word scaling, words brighten
+//               as they are spoken, accents only by weight/colour/size.
+// 'soft'      — delicate: lighter Inter on a frosted rounded plate, each word fades
+//               and rises in as it is spoken, accents in colour.
+// 'editorial' — magazine look: Inter for the text, accent words in a serif italic
+//               (Playfair Display) in colour; words rise in softly as spoken.
+export type CaptionPreset = 'default' | 'clean' | 'soft' | 'editorial';
+
+// per-word reveal (0 → 1) over ~140 ms from the word's start
+const reveal = (absMs: number, startMs: number) => Math.max(0, Math.min(1, (absMs - startMs + 40) / 140));
+
+const SoftOrEditorial: React.FC<{caption: Caption; accentColor: string; absMs: number; editorial: boolean}> = ({caption, accentColor, absMs, editorial}) => {
+  const base = Math.round((editorial ? 58 : 52) * (caption.scale ?? 1));
+  const words = caption.words.map((w, i) => {
+    const r = reveal(absMs, w.startMs);
+    const accentSerif = editorial && w.accent;
+    return (
+      <React.Fragment key={i}>
+        {i > 0 ? ' ' : null}
+        <span
+          style={{
+            display: 'inline-block',
+            fontFamily: accentSerif ? SERIF_FONT : TITLE_FONT,
+            fontStyle: accentSerif ? 'italic' : 'normal',
+            fontSize: accentSerif ? Math.round(base * 1.2) : w.accent ? Math.round(base * 1.04) : base,
+            fontWeight: accentSerif ? 600 : w.accent ? 700 : editorial ? 600 : 500,
+            letterSpacing: accentSerif ? 0 : -0.3,
+            lineHeight: 1.22,
+            color: w.accent ? accentColor : '#ffffff',
+            opacity: 0.3 + 0.7 * r,
+            transform: `translateY(${(1 - r) * 6}px)`,
+            textShadow: editorial ? '0 2px 12px rgba(0,0,0,0.55), 0 0 3px rgba(0,0,0,0.35)' : '0 1px 6px rgba(0,0,0,0.35)',
+          }}
+        >
+          {w.text}
+        </span>
+      </React.Fragment>
+    );
+  });
+  // the spaces between word spans take the parent's font — keep it the caption size
+  const box = {fontFamily: TITLE_FONT, fontSize: base, fontWeight: 500, lineHeight: 1.22};
+  return editorial ? (
+    <div style={{...box, textAlign: 'center', textWrap: 'balance', maxWidth: 880} as React.CSSProperties}>{words}</div>
+  ) : (
+    <div
+      style={{
+        ...box,
+        textAlign: 'center',
+        textWrap: 'balance',
+        maxWidth: 880,
+        background: 'rgba(14,14,18,0.42)',
+        backdropFilter: 'blur(10px)',
+        borderRadius: 26,
+        padding: '14px 30px 16px',
+      } as React.CSSProperties}
+    >
+      {words}
+    </div>
+  );
+};
 
 // один блок субтитров (внутри своего Sequence)
 const CaptionPage: React.FC<{caption: Caption; accentColor: string; durationInFrames: number; preset: CaptionPreset}> = ({caption, accentColor, durationInFrames, preset}) => {
@@ -33,6 +90,15 @@ const CaptionPage: React.FC<{caption: Caption; accentColor: string; durationInFr
       ? 1 // page too short for a fade-out
       : interpolate(frame, [outStart, durationInFrames], [1, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
   const opacity = appear * disappear;
+
+  if (preset === 'soft' || preset === 'editorial') {
+    return (
+      <div style={{position: 'absolute', top: `${caption.topPct}%`, left: 0, right: 0, display: 'flex', justifyContent: 'center',
+                   padding: '0 90px', opacity, transform: `translateY(${interpolate(appear, [0, 1], [8, 0])}px)`}}>
+        <SoftOrEditorial caption={caption} accentColor={accentColor} absMs={absMs} editorial={preset === 'editorial'} />
+      </div>
+    );
+  }
 
   return (
     <div

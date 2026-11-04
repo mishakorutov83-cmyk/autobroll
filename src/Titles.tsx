@@ -21,6 +21,7 @@ export type TitleItem = {
 export type ScheduleRow = {day: string; date: string; event: string; note?: string | null; time: string};
 
 export const TITLE_FONT = '"AB Inter", Inter, -apple-system, system-ui, sans-serif';
+export const SERIF_FONT = '"AB Playfair", "Playfair Display", Georgia, serif';
 
 // Inter (Cyrillic) shipped in public/fonts — loaded once, render waits for it.
 // Falls back to system fonts if the files are not there.
@@ -29,10 +30,11 @@ let fontsPromise: Promise<unknown> | null = null;
 const loadFonts = () => {
   if (!fontsPromise) {
     fontsPromise = Promise.all(
-      FONT_WEIGHTS.map((w) => {
-        const f = new FontFace('AB Inter', `url(${staticFile(`fonts/Inter-${w}.ttf`)})`, {weight: String(w)});
-        return f.load().then((ff) => (document.fonts as unknown as {add: (f: FontFace) => void}).add(ff)).catch(() => null);
-      }),
+      [
+        ...FONT_WEIGHTS.map((w) => new FontFace('AB Inter', `url(${staticFile(`fonts/Inter-${w}.ttf`)})`, {weight: String(w)})),
+        // editorial captions: accent words in a serif italic
+        new FontFace('AB Playfair', `url(${staticFile('fonts/PlayfairDisplay-600i.ttf')})`, {weight: '600', style: 'italic'}),
+      ].map((f) => f.load().then((ff) => (document.fonts as unknown as {add: (f: FontFace) => void}).add(ff)).catch(() => null)),
     );
   }
   return fontsPromise;

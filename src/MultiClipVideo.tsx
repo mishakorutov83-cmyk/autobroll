@@ -119,7 +119,7 @@ export const MultiClipVideo: React.FC<{
   const projectedCaptions = projectCaptions(captions, clips, fps);
   const projectedBrolls = projectBrolls(brolls, clips, fps);
   const projectedTitles = projectTitles(titles, clips, fps);
-  useTitleFonts(captionPreset === 'clean' || titles.length > 0);
+  useTitleFonts(captionPreset !== 'default' || titles.length > 0);
 
   // OffthreadVideo is built for rendering (frame-accurate, but stutters/freezes
   // in the live Player). Use native <Video> in preview for smooth playback,
@@ -150,7 +150,7 @@ export const MultiClipVideo: React.FC<{
       {music && <MusicTrack music={music} totalFrames={totalFrames} speech={projectedCaptions.map((c) => [c.startMs, c.endMs])} />}
 
       {/* soft shade under the caption zone (clean preset) */}
-      {captionPreset === 'clean' && projectedCaptions.length > 0 && (() => {
+      {(captionPreset === 'clean' || captionPreset === 'editorial') && projectedCaptions.length > 0 && (() => {
         // captions low in the frame → shade the bottom; captions mid-frame (split layout,
         // at the panel seam) → a soft band behind them instead
         const top = projectedCaptions[0].topPct;

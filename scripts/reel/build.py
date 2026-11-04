@@ -417,7 +417,7 @@ def main():
         titles.append({"id": f"pop{i}", "kind": "pop", "clipId": host, "offsetSec": round((t - spans[host][0]) / speed, 3),
                        "durationSec": dur, "title": title, "subtitle": sub, "topPct": top, "tilt": tilt})
     props = {"clips": clips, "music": None, "captions": captions, "brolls": [], "accentColor": P.ACCENT,
-             "captionPreset": P.CAPTION_PRESET, "titles": titles}
+             "captionPreset": getattr(edl, "CAPTION_PRESET", P.CAPTION_PRESET), "titles": titles}
     json.dump(props, open(ROOT / "public" / f"{args.ep}.props.json", "w"), ensure_ascii=False, indent=1)
     total = sum(round((c["outSec"] - c["inSec"]) / c["speed"] * FPS) for c in clips) / FPS
     print(f"project: {len(clips)} clips, {len(captions)} caption pages, {total // 60:.0f}:{total % 60:04.1f} at {speed}x "

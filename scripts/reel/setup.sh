@@ -24,6 +24,12 @@ for w in 500 600 700 800; do
   curl -fsSL -o "$f" "$url"
 done
 
+f="public/fonts/PlayfairDisplay-600i.ttf"   # editorial caption accents
+if [ ! -s "$f" ]; then
+  url=$(curl -fsS "https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@1,600" | grep -o 'https://[^)]*\.ttf' | head -1)
+  curl -fsSL -o "$f" "$url"
+fi
+
 [ -s "$CACHE/yunet.onnx" ] || curl -fsSL -o "$CACHE/yunet.onnx" \
   "https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
 
