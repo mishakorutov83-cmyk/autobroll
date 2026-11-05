@@ -8,7 +8,7 @@ export type BrollItem = {
   startMs: number;
   endMs: number;
   kind: 'video' | 'image';
-  mode: 'fullscreen' | 'inset' | 'top';
+  mode: 'fullscreen' | 'inset' | 'top' | 'pip';
   src: string;
   source?: 'own' | 'pexels';
   query?: string;
@@ -51,6 +51,7 @@ export function projectBrolls(items: BrollItem[], clips: Clip[], fps: number): B
 const boxByMode: Record<BrollItem['mode'], React.CSSProperties> = {
   fullscreen: {top: 0, left: 0, width: '100%', height: '100%'},
   top: {top: 0, left: 0, width: '100%', height: '45%'},
+  pip: {top: '44%', right: '4%', width: '36%', height: '34%', borderRadius: 16, overflow: 'hidden', boxShadow: '0 12px 40px rgba(0,0,0,0.45)'},
   inset: {top: '6%', right: '5%', width: '34%', height: '22%', borderRadius: 18, overflow: 'hidden', border: '3px solid rgba(255,255,255,0.9)', boxShadow: '0 20px 50px rgba(0,0,0,0.5)'},
 };
 
@@ -58,7 +59,7 @@ const One: React.FC<{item: BrollItem}> = ({item}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const fade = item.fade === false ? 1 : interpolate(frame, [0, Math.round(fps * 0.18)], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
-  const box = item.mode === 'inset' ? boxByMode.inset : item.mode === 'top' ? boxByMode.top : boxByMode.fullscreen;
+  const box = boxByMode[item.mode] ?? boxByMode.fullscreen;
   const VideoComp = getRemotionEnvironment().isRendering ? OffthreadVideo : Video;
   const src = resolveSrc(item.src);
   const scale = item.scale ?? 1;

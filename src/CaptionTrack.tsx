@@ -11,7 +11,30 @@ const ACCENT = '#FFB020';
 // 'default' — the original look (active word pops, dimmed rest).
 // 'clean'   — calmer interview style: Inter, no per-word scaling, words brighten
 //             as they are spoken, accents only by weight/colour/size.
-export type CaptionPreset = 'default' | 'clean';
+// 'plain'   — creator auto-caption look: small white Inter, no box, phrase at once;
+//             accent words (numbers, prices) are bold and larger.
+export type CaptionPreset = 'default' | 'clean' | 'plain';
+
+const PlainPage: React.FC<{caption: Caption; durationInFrames: number}> = ({caption, durationInFrames}) => {
+  const frame = useCurrentFrame();
+  const fontSize = Math.round(44 * (caption.scale ?? 1));
+  const out = interpolate(frame, [Math.max(1, durationInFrames - 3), durationInFrames], [1, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
+  return (
+    <div style={{position: 'absolute', top: `${caption.topPct}%`, left: 0, right: 0, display: 'flex', justifyContent: 'center', padding: '0 120px', opacity: out}}>
+      <div
+        data-ab={`cap:${caption.id}`}
+        style={{textAlign: 'center', textWrap: 'balance', maxWidth: 840, fontFamily: TITLE_FONT, lineHeight: 1.3, color: '#fff', textShadow: '0 1px 6px rgba(0,0,0,0.55), 0 0 2px rgba(0,0,0,0.4)'} as React.CSSProperties}
+      >
+        {caption.words.map((w, i) => (
+          <React.Fragment key={i}>
+            {i > 0 ? ' ' : null}
+            <span style={{fontSize: w.accent ? Math.round(fontSize * 1.3) : fontSize, fontWeight: w.accent ? 800 : 500, letterSpacing: 0.2}}>{w.text}</span>
+          </React.Fragment>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 // один блок субтитров (внутри своего Sequence)
 const CaptionPage: React.FC<{caption: Caption; accentColor: string; durationInFrames: number; preset: CaptionPreset}> = ({caption, accentColor, durationInFrames, preset}) => {
@@ -122,7 +145,11 @@ export const CaptionTrack: React.FC<{
         const dur = Math.max(1, Math.round(((visEnd - c.startMs) / 1000) * fps));
         return (
           <Sequence key={c.id} from={from} durationInFrames={dur} layout="none" name={c.words.map((w) => w.text).join(' ')}>
-            <CaptionPage caption={c} accentColor={accentColor} durationInFrames={dur} preset={preset} />
+            {preset === 'plain' ? (
+              <PlainPage caption={c} durationInFrames={dur} />
+            ) : (
+              <CaptionPage caption={c} accentColor={accentColor} durationInFrames={dur} preset={preset} />
+            )}
           </Sequence>
         );
       })}

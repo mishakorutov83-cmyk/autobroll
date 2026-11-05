@@ -9,9 +9,9 @@
 
 Plans live in work/agent/<proj>/plans.json — they can also be edited by hand before render.
 """
-import argparse, json, subprocess, sys
+import argparse, json
 
-from .config import ROOT, TEMPLATES, proj_dirs
+from .config import TEMPLATES, proj_dirs
 
 
 def main():
@@ -70,21 +70,10 @@ def main():
     elif args.cmd == "review":
         print((work / "plans.md").read_text())
     elif args.cmd == "render":
-        from . import brain
-        from .build import build
+        from .render import render
 
-        ps = brain.load(args.proj)
-        only = set(args.only.split(",")) if args.only else None
-        for p in ps.plans:
-            if only and p.id not in only:
-                continue
-            build(args.proj, p, pj.get("template", "stylist_story"))
-            name = f"agent_{args.proj}_{p.id}"
-            cmd = [sys.executable, str(ROOT / "scripts" / "reel" / "render.py"), name]
-            if args.stills:
-                cmd += ["--stills", args.stills]
-            subprocess.run(cmd, check=True, cwd=ROOT)
-
+        for r in render(args.proj, set(args.only.split(",")) if args.only else None, args.stills):
+            print(f"{r['id']}: {r['preview']}")
 
 if __name__ == "__main__":
     main()

@@ -42,6 +42,7 @@ class Insert(Strict):
     duration: float = Field(description="seconds of source time (0.8-4)")
     source: int = Field(description="source file the picture is taken from")
     from_time: float = Field(description="source time of the picture to show (must not contain black / empty frames)")
+    mode: Literal["full", "pip"] = Field(description="full = replace the picture; pip = small window on the right, the speaker stays visible")
 
 
 class Style(Strict):

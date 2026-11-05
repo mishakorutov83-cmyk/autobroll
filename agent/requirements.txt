@@ -2,3 +2,4 @@
 anthropic>=2.5
 pydantic>=2.10
 pyyaml>=6
+aiogram>=3.13

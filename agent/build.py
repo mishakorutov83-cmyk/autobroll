@@ -81,8 +81,9 @@ def transform(scale: float, face) -> tuple[float, float]:
     return round(float(tx) * 100, 2), round(float(ty) * 100, 2)
 
 
-def caption_pages(cid, text, accents, words, ia, ob, max_chars, top):
-    """corrected caption text → timed pages (≤ 2 lines), aligned to the transcript's words"""
+def caption_pages(cid, text, accents, words, ia, ob, max_chars, top, plain=False):
+    """corrected caption text → timed pages (≤ 2 lines), aligned to the transcript's words.
+    plain: creator style — no trailing dots/commas on screen, numbers and prices always accented"""
     toks = text.split()
     ww = [w for w in words if ia - 0.25 <= w["s"] < ob - 0.02]
     A, B = [norm(t) for t in toks], [norm(w["w"]) for w in ww]
@@ -116,9 +117,10 @@ def caption_pages(cid, text, accents, words, ia, ob, max_chars, top):
             pages.append(cur)
             cur = []
     out = []
+    shown = [re.sub(r"[.,;:]+$", "", t) if plain else t for t in toks]
     for pi, p in enumerate(pages):
-        words_ = [{"text": toks[j], "startMs": round(tim[j][0] * 1000), "endMs": round(tim[j][1] * 1000),
-                   "accent": toks[j] in accents} for j in p]
+        words_ = [{"text": shown[j], "startMs": round(tim[j][0] * 1000), "endMs": round(tim[j][1] * 1000),
+                   "accent": toks[j] in accents or (plain and bool(re.search(r"\d", toks[j])))} for j in p]
         out.append({"id": f"{cid}_{pi}", "clipId": cid, "words": words_, "startMs": max(round(ia * 1000), words_[0]["startMs"] - 60),
                     "endMs": words_[-1]["endMs"], "topPct": top})
     return out
@@ -155,7 +157,8 @@ def build(proj: str, plan: EditPlan, template: str) -> Path:
                       "volume": 0 if c.muted else 1, "muted": c.muted, "speed": plan.speed})
         if c.caption and not c.muted:
             captions += caption_pages(c.id, c.caption, c.accents, s.words, ia, ob,
-                                      cap.get("max_chars", P.CAPTION_MAX_CHARS), plan.style.caption_top)
+                                      cap.get("max_chars", P.CAPTION_MAX_CHARS), plan.style.caption_top,
+                                      plain=cap.get("preset") == "plain")
 
     ids = {c["id"] for c in clips}
     byid = {c["id"]: c for c in clips}
@@ -168,7 +171,7 @@ def build(proj: str, plan: EditPlan, template: str) -> Path:
         if b - a < 0.3:
             continue
         brolls.append({"id": f"i{i}", "clipId": x.clip_id, "startMs": round(a * 1000), "endMs": round(b * 1000),
-                       "kind": "video", "mode": "fullscreen", "src": f"agent/{proj}/s{x.source}.mp4",
+                       "kind": "video", "mode": "pip" if x.mode == "pip" else "fullscreen", "src": f"agent/{proj}/s{x.source}.mp4",
                        "fromSec": round(x.from_time, 3), "fade": False})
     for i, o in enumerate(plan.overlays):
         if o.clip_id in ids:
