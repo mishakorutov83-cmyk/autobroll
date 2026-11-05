@@ -7,7 +7,7 @@ import {placeClips, type Clip} from './timeline';
 // timeline), so they move with the clip when it is reordered or trimmed.
 export type TitleItem = {
   id: string;
-  kind: 'lower' | 'end';
+  kind: 'lower' | 'end' | 'hook' | 'label';
   clipId: string; // anchor clip
   offsetSec: number; // start, relative to the anchor clip's start on the timeline
   durationSec: number;
@@ -136,11 +136,71 @@ const EndCard: React.FC<{item: TitleItem; dur: number; accent: string}> = ({item
   );
 };
 
+// Hook: big headline at the top for the first seconds (scroll-stopper).
+const Hook: React.FC<{item: TitleItem; dur: number; accent: string}> = ({item, dur, accent}) => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const inP = interpolate(frame, [0, fps * 0.35], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: ease});
+  const out = interpolate(frame, [dur - fps * 0.3, dur], [1, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
+  return (
+    <AbsoluteFill style={{alignItems: 'center', paddingTop: 250, fontFamily: TITLE_FONT, opacity: out}}>
+      <div
+        style={{
+          maxWidth: 980,
+          padding: '22px 36px',
+          borderRadius: 22,
+          background: 'rgba(12,12,14,0.78)',
+          borderBottom: `6px solid ${accent}`,
+          color: '#fff',
+          fontSize: 62,
+          fontWeight: 800,
+          lineHeight: 1.12,
+          textAlign: 'center',
+          whiteSpace: 'pre-line',
+          transform: `translateY(${(1 - inP) * -30}px) scale(${0.94 + 0.06 * inP})`,
+          opacity: inP,
+        }}
+      >
+        {item.title}
+      </div>
+    </AbsoluteFill>
+  );
+};
+
+// Label: a short note about what is on screen (product name, meaning) — upper third.
+const Label: React.FC<{item: TitleItem; dur: number; accent: string}> = ({item, dur, accent}) => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const inP = interpolate(frame, [0, fps * 0.3], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: ease});
+  const out = interpolate(frame, [dur - fps * 0.25, dur], [1, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
+  return (
+    <AbsoluteFill style={{alignItems: 'center', paddingTop: 330, fontFamily: TITLE_FONT, opacity: out * inP}}>
+      <div
+        style={{
+          padding: '14px 30px',
+          borderRadius: 999,
+          background: accent,
+          color: '#111',
+          fontSize: 50,
+          fontWeight: 800,
+          letterSpacing: 0.5,
+          transform: `translateY(${(1 - inP) * 20}px)`,
+          boxShadow: '0 6px 30px rgba(0,0,0,0.35)',
+        }}
+      >
+        {item.title}
+      </div>
+    </AbsoluteFill>
+  );
+};
+
+const KIND = {lower: LowerThird, end: EndCard, hook: Hook, label: Label} as const;
+
 export const TitleLayer: React.FC<{items: Array<TitleItem & {from: number; dur: number}>; accentColor: string}> = ({items, accentColor}) => (
   <>
     {items.map((it) => (
       <Sequence key={it.id} from={it.from} durationInFrames={it.dur} name={`title:${it.title}`}>
-        {it.kind === 'end' ? <EndCard item={it} dur={it.dur} accent={accentColor} /> : <LowerThird item={it} dur={it.dur} accent={accentColor} />}
+        {React.createElement(KIND[it.kind] ?? LowerThird, {item: it, dur: it.dur, accent: accentColor})}
       </Sequence>
     ))}
   </>

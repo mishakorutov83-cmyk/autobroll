@@ -1,0 +1,40 @@
+# Template: a stylist / personal shopper tells a client story, then shows the product.
+# Built from the first test video (Dior Maison tarot plates). A template fixes the STYLE
+# and the dramaturgy rules; the story itself is built anew from each video's transcript.
+name: stylist_story
+description: Рассказ эксперта в камеру → история клиента → показ товара на перебивках → вывод.
+
+length: [45, 75]        # seconds after speed-up
+speed: 1.08
+
+structure:
+  - hook: >
+      0–3 с. Самая интригующая реальная фраза (или её смысл заголовком сверху).
+      Не начинать с «Такая у меня история» — сразу в суть.
+  - context: кто клиент и какая задача, 1–3 коротких фразы
+  - reveal: товар крупно, голос продолжает рассказ; подписи к предметам
+  - payoff: смысл / вывод одной фразой, последний кадр — товар
+
+cutting:
+  avg_shot: 3.0          # seconds between shot-size changes
+  shot_sizes: {N: 1.0, M: 1.12, C: 1.24}
+  remove: [паузы, повторы, оговорки, комплименты не по делу, длинные вступления]
+  keep_person: true      # не вырезать живые эмоции и реакции
+
+captions:
+  preset: clean
+  max_chars: 30
+  accent: "#E8C46A"
+  top: 64
+  accents_per_clip: 1
+
+overlays:
+  hook_headline: true    # заголовок сверху в первые 3 с
+  item_labels: true      # «Звезда — надежда» над показанным предметом
+
+end_card: null
+music: none
+
+variants:
+  # what may change between variants (meaning never changes)
+  allowed: [хук, порядок блоков, длина, заголовок, подписи, акцентный цвет, положение субтитров, укрупнения]

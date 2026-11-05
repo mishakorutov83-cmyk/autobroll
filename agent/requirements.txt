@@ -1,0 +1,4 @@
+# on top of scripts/reel/requirements.txt (whisper, opencv, numpy, gdown) and the node deps
+anthropic>=2.5
+pydantic>=2.10
+pyyaml>=6

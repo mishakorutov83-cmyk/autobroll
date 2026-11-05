@@ -14,6 +14,8 @@ export type BrollItem = {
   query?: string;
   alternatives?: string[];
   scale?: number; // size multiplier (1 = default), set via the on-preview slider
+  fromSec?: number; // video only: start offset inside the B-roll file (cut-away from the same footage)
+  fade?: boolean; // false = hard cut in (default: short fade)
 };
 
 // the creator's own B-roll source (pool the generator can pick from)
@@ -55,7 +57,7 @@ const boxByMode: Record<BrollItem['mode'], React.CSSProperties> = {
 const One: React.FC<{item: BrollItem}> = ({item}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
-  const fade = interpolate(frame, [0, Math.round(fps * 0.18)], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
+  const fade = item.fade === false ? 1 : interpolate(frame, [0, Math.round(fps * 0.18)], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
   const box = item.mode === 'inset' ? boxByMode.inset : item.mode === 'top' ? boxByMode.top : boxByMode.fullscreen;
   const VideoComp = getRemotionEnvironment().isRendering ? OffthreadVideo : Video;
   const src = resolveSrc(item.src);
@@ -66,7 +68,7 @@ const One: React.FC<{item: BrollItem}> = ({item}) => {
   return (
     <div data-ab={`broll:${item.id}`} style={{position: 'absolute', ...box, opacity: fade, transform: scale === 1 ? undefined : `scale(${scale})`, transformOrigin: origin}}>
       {item.kind === 'video' ? (
-        <VideoComp src={src} muted style={{width: '100%', height: '100%', objectFit: 'cover'}} />
+        <VideoComp src={src} muted trimBefore={item.fromSec ? Math.round(item.fromSec * fps) : undefined} style={{width: '100%', height: '100%', objectFit: 'cover'}} />
       ) : (
         <Img src={src} style={{width: '100%', height: '100%', objectFit: 'cover'}} />
       )}

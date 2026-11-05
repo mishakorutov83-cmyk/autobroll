@@ -1,0 +1,36 @@
+# Template: street / restaurant interview, host asks — guest answers.
+# The style of the «Люди нашего места» series (scripts/reel/preset.py), as a template.
+name: interview_qa
+description: Интервью «вопрос ведущего → ответ → реакция», хук — сильнейшая реплика гостя.
+
+length: [160, 180]
+speed: 1.10
+
+structure:
+  - hook: самая сильная реальная реплика гостя, 0–5 с
+  - intro: «как зовут / откуда» + имя гостя заголовком
+  - dialogue: живой диалог «вопрос ведущего → ответ → реакция»; ведущего не вырезать
+  - finale: самая тёплая / вдохновляющая мысль гостя
+
+cutting:
+  avg_shot: 6.0
+  shot_sizes: {N: 1.06, M: 1.16, C: 1.28}
+  remove: [длинные проводки камеры, кадры рук и стола, паузы, повторы]
+  keep_person: true
+
+captions:
+  preset: clean
+  max_chars: 32
+  accent: "#F2C14E"
+  top: 63.5
+  accents_per_clip: 2
+
+overlays:
+  hook_headline: false
+  item_labels: false
+
+end_card: {title: "ЛЮДИ\nНАШЕГО МЕСТА", subtitle: "Новые истории людей из Китая", seconds: 3}
+music: none
+
+variants:
+  allowed: [хук, порядок вопросов, длина, акцентный цвет, укрупнения]

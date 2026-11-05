@@ -65,7 +65,10 @@ def transcribe(work: Path, model_name: str, prompt: str):
                          download_root=str(MODELS / "whisper"))
     # sequential decoding on purpose: the batched/VAD mode is faster but drops the host's
     # short reactions («Супер», «Да-да») and hallucinated on the ep1 benchmark
-    segs, _ = model.transcribe(str(work / "audio.wav"), language="ru", word_timestamps=True, beam_size=5,
+    # decoded array, not the file path: newer PyAV builds break faster-whisper's own decoding
+    wv = wave.open(str(work / "audio.wav"))
+    audio = np.frombuffer(wv.readframes(wv.getnframes()), np.int16).astype(np.float32) / 32768
+    segs, _ = model.transcribe(audio, language="ru", word_timestamps=True, beam_size=5,
                                vad_filter=False, initial_prompt=prompt or None)
     out = [{"start": s.start, "end": s.end, "text": s.text.strip(),
             "words": [{"w": w.word, "s": w.start, "e": w.end, "p": w.probability} for w in s.words]} for s in segs]
