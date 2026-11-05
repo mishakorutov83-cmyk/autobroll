@@ -23,12 +23,12 @@ const PlainPage: React.FC<{caption: Caption; durationInFrames: number}> = ({capt
     <div style={{position: 'absolute', top: `${caption.topPct}%`, left: 0, right: 0, display: 'flex', justifyContent: 'center', padding: '0 120px', opacity: out}}>
       <div
         data-ab={`cap:${caption.id}`}
-        style={{textAlign: 'center', textWrap: 'balance', maxWidth: 840, fontFamily: TITLE_FONT, lineHeight: 1.3, color: '#fff', textShadow: '0 1px 6px rgba(0,0,0,0.55), 0 0 2px rgba(0,0,0,0.4)'} as React.CSSProperties}
+        style={{textAlign: 'center', textWrap: 'balance', maxWidth: 840, fontFamily: TITLE_FONT, lineHeight: 1.3, color: '#fff', wordSpacing: '0.18em', textShadow: '0 1px 6px rgba(0,0,0,0.55), 0 0 2px rgba(0,0,0,0.4)'} as React.CSSProperties}
       >
         {caption.words.map((w, i) => (
           <React.Fragment key={i}>
             {i > 0 ? ' ' : null}
-            <span style={{fontSize: w.accent ? Math.round(fontSize * 1.3) : fontSize, fontWeight: w.accent ? 800 : 500, letterSpacing: 0.2}}>{w.text}</span>
+            <span style={{fontSize: w.accent ? Math.round(fontSize * 1.3) : fontSize, fontWeight: w.accent ? 800 : 500, letterSpacing: 0.2, wordSpacing: '0.12em'}}>{w.text}</span>
           </React.Fragment>
         ))}
       </div>
