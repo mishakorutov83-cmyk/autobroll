@@ -16,4 +16,6 @@ RUN find . -path ./node_modules -prune -o -name '*.sh' -exec sed -i 's/\r$//' {}
 # fonts, face model, Whisper model, Remotion's headless Chrome — baked into the image
 RUN bash scripts/reel/setup.sh
 ENV PYTHONUNBUFFERED=1
-CMD ["python3", "-m", "agent.bot"]
+EXPOSE 8080
+# web app (iPhone) + Telegram bot (if BOT_TOKEN is set) in one process
+CMD ["python3", "-m", "agent.app"]

@@ -22,6 +22,14 @@ sys.path.insert(0, str(ROOT / "scripts" / "reel"))
 import prepare as R  # noqa: E402  (fetch / probe / faces are shared with the interview pipeline)
 import preset as P  # noqa: E402
 
+_hook = None  # set by ingest(on_status=…): progress for the bot / web app
+
+
+def say(msg: str):
+    print(msg, flush=True)
+    if _hook:
+        _hook(msg)
+
 
 def transcribe(work: Path, language: str, prompt: str | None):
     from faster_whisper import WhisperModel
@@ -38,7 +46,7 @@ def transcribe(work: Path, language: str, prompt: str | None):
             "words": [{"w": w.word.strip(), "s": round(w.start, 2), "e": round(w.end, 2), "p": round(w.probability, 2)}
                       for w in s.words]} for s in segs]
     json.dump(out, open(work / "words.json", "w"), ensure_ascii=False)
-    print(f"  {work.name}: transcript {len(out)} segments, {time.time() - t0:.0f}s", flush=True)
+    say(f"Речь распознана: {len(out)} фраз, {time.time() - t0:.0f} с")
 
 
 def proxy(src: Path, dst: Path):
@@ -48,7 +56,7 @@ def proxy(src: Path, dst: Path):
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(src), "-vf", vf, "-af", P.AUDIO_FILTER + ",aresample=48000",
                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "17", "-g", str(P.FPS), "-c:a", "aac", "-b:a", "192k",
                     "-movflags", "+faststart", str(dst)], check=True)
-    print(f"  {dst.name}: proxy {time.time() - t0:.0f}s", flush=True)
+    say(f"Копия для монтажа готова, {time.time() - t0:.0f} с")
 
 
 def sheets(work: Path, src: Path, idx: int, meta: dict):
@@ -76,7 +84,7 @@ def sheets(work: Path, src: Path, idx: int, meta: dict):
         chunk = frames[n:n + per] + [np.zeros((h, w, 3), np.uint8)] * (per - len(frames[n:n + per]))
         rows = [np.hstack(chunk[r * SHEET_COLS:(r + 1) * SHEET_COLS]) for r in range(SHEET_ROWS)]
         cv2.imwrite(str(work / f"sheet_{n // per:02d}.jpg"), np.vstack(rows), [cv2.IMWRITE_JPEG_QUALITY, 80])
-    print(f"  {work.name}: {len(frames)} frames → {-(-len(frames) // per)} sheets", flush=True)
+    say(f"Кадры для анализа: {len(frames)}")
 
 
 def blacks(work: Path, src: Path):
@@ -89,7 +97,16 @@ def blacks(work: Path, src: Path):
     json.dump(spans, open(work / "black.json", "w"))
 
 
-def ingest(proj: str, inputs: list[str], language: str = "ru", prompt: str | None = None):
+def ingest(proj: str, inputs: list[str], language: str = "ru", prompt: str | None = None, on_status=None):
+    global _hook
+    _hook = on_status
+    try:
+        _ingest(proj, inputs, language, prompt)
+    finally:
+        _hook = None
+
+
+def _ingest(proj: str, inputs: list[str], language: str, prompt: str | None):
     work, pub = proj_dirs(proj)
     work.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
@@ -97,10 +114,13 @@ def ingest(proj: str, inputs: list[str], language: str = "ru", prompt: str | Non
     for i, arg in enumerate(inputs):
         sw = work / f"s{i}"
         sw.mkdir(exist_ok=True)
+        n = f" {i + 1} из {len(inputs)}" if len(inputs) > 1 else ""
+        if arg.startswith("http"):
+            say(f"Скачиваю исходник{n} с Google Drive…")
         src = R.fetch(arg, sw)
         meta = R.probe(src)
         json.dump(meta, open(sw / "meta.json", "w"))
-        print(f"s{i}: {meta['width']}x{meta['height']} {meta['fps']:.0f}fps {meta['duration']:.1f}s  ← {arg}", flush=True)
+        say(f"Исходник{n}: {meta['width']}×{meta['height']}, {meta['duration']:.0f} с — распознаю речь, лица и кадры…")
         subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(src), "-ac", "1", "-ar", "16000", str(sw / "audio.wav")], check=True)
         wv = wave.open(str(sw / "audio.wav"))
         a = np.frombuffer(wv.readframes(wv.getnframes()), np.int16).astype(np.float32) / 32768
@@ -119,7 +139,7 @@ def ingest(proj: str, inputs: list[str], language: str = "ru", prompt: str | Non
             j.join()
         sources.append({"index": i, "input": arg, **meta})
     json.dump({"project": proj, "sources": sources}, open(work / "project.json", "w"), ensure_ascii=False, indent=1)
-    print(f"ingest done in {time.time() - t0:.0f}s → {work}")
+    say(f"Разбор закончен за {time.time() - t0:.0f} с")
 
 
 def describe(proj: str) -> tuple[str, list[Path]]:

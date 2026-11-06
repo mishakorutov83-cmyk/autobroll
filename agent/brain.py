@@ -7,7 +7,7 @@ The brain only writes plans; build.py and render.py do the media work.
 """
 from __future__ import annotations
 
-import base64, json
+import base64, json, os
 from pathlib import Path
 
 import anthropic
@@ -80,6 +80,10 @@ def _call(messages: list, schema, max_tokens: int = 64000):
 
 
 def plan(proj: str, template: str, variants: int, feedback: str | None = None) -> PlanSet:
+    if os.environ.get("AGENT_FAKE_BRAIN"):
+        ps = _fake_plan(proj, variants)
+        save(proj, ps)
+        return ps
     work, _ = proj_dirs(proj)
     facts, images = describe(proj)
     content = [{"type": "text", "text": f"# ШАБЛОН\n```yaml\n{load_template(template)}\n```"},
@@ -125,6 +129,8 @@ def _more(messages: list, ps: PlanSet, variants: int) -> PlanSet:
 
 
 def check(proj: str, ps: PlanSet) -> MeaningReport:
+    if os.environ.get("AGENT_FAKE_BRAIN"):
+        return MeaningReport(checks=[{"plan_id": p.id, "ok": True, "problems": []} for p in ps.plans])
     facts, _ = describe(proj)
     plans = [{"id": p.id, "clips": [{"id": c.id, "source": c.source, "start": c.start, "end": c.end, "caption": c.caption}
                                     for c in p.clips], "overlays": [o.model_dump() for o in p.overlays]} for p in ps.plans]
@@ -168,3 +174,20 @@ def review(ps: PlanSet) -> str:
 
 def as_plan(obj) -> EditPlan:
     return obj if isinstance(obj, EditPlan) else EditPlan.model_validate(obj)
+
+
+def _fake_plan(proj: str, variants: int) -> PlanSet:
+    """AGENT_FAKE_BRAIN=1 — no Claude call: transcript phrases in order (rotated per variant).
+    Only for testing the bot / web app / render end to end without an API key."""
+    work, _ = proj_dirs(proj)
+    segs = [g for g in json.load(open(work / "s0" / "words.json")) if g["end"] - g["start"] > 0.8][:12]
+    clips = [{"id": f"c{i:02d}", "source": 0, "start": g["start"], "end": g["end"], "shot": "NMC"[i % 3], "punch_at": None,
+              "caption": g["text"], "accents": [], "muted": False} for i, g in enumerate(segs)]
+    plans = []
+    for k in range(variants + 1):
+        order = clips[k % len(clips):] + clips[:k % len(clips)]
+        plans.append({"id": "main" if k == 0 else f"v{k}", "angle": "тест без Claude" if k == 0 else f"тест: старт с фразы {k + 1}",
+                      "speed": 1.05, "clips": order, "overlays": [], "inserts": [],
+                      "style": {"accent": "#FFFFFF", "caption_top": 66 + k % 3 * 3, "zoom_bias": 1.0},
+                      "caption_text": "Тестовый монтаж без Claude", "hashtags": ["#тест"], "notes": "AGENT_FAKE_BRAIN"})
+    return PlanSet.model_validate({"plans": plans})

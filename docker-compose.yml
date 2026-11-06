@@ -1,9 +1,42 @@
-# Video agent on a VPS (outside RU — the Claude API is not available from Russia).
-#   cp .env.example .env   # fill in tokens
-#   docker compose up -d --build                         bot only: Drive links + files ≤ 20 MB
-#   docker compose --profile bigfiles up -d --build      + own Bot API server: files up to 2 GB
-#                                                        (needs TELEGRAM_API_ID/HASH and BOT_API_URL in .env)
+# Video agent: web app for iPhone (port 8080) + Telegram bot, in one container.
+#   cp .env.example .env   # fill in WEB_PASSWORD, ANTHROPIC_API_KEY (+ BOT_TOKEN for Telegram)
+#   docker compose up -d --build                       web app on http://<this computer>:8080 (same Wi-Fi)
+#   docker compose --profile tunnel up -d --build      + public HTTPS address for the iPhone (home PC, no open ports)
+#   docker compose --profile https up -d --build       + HTTPS on your own domain (VPS: DOMAIN in .env, ports 80/443)
+#   docker compose --profile bigfiles up -d --build    + own Telegram Bot API server: files up to 2 GB in the bot
+# Profiles combine: docker compose --profile tunnel --profile bigfiles up -d --build
 services:
+  agent:
+    build: {context: ., dockerfile: Dockerfile.agent}
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8080:8080"
+    volumes:
+      - tg-data:/var/lib/telegram-bot-api   # same path as in the Bot API container: local file access
+      - ./work:/app/work
+      - ./out:/app/out
+      - ./public/agent:/app/public/agent
+
+  tunnel:                    # Cloudflare quick tunnel: prints a https://….trycloudflare.com address in its log
+    image: cloudflare/cloudflared:latest
+    profiles: [tunnel]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --url http://agent:8080
+    depends_on: [agent]
+
+  caddy:                     # automatic HTTPS certificate for DOMAIN (point the domain's A record at the server)
+    image: caddy:2
+    profiles: [https]
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    command: caddy reverse-proxy --from ${DOMAIN:-localhost} --to agent:8080
+    volumes:
+      - caddy-data:/data
+    depends_on: [agent]
+
   telegram-bot-api:          # self-hosted Bot API: files up to 2 GB instead of 20 MB
     image: aiogram/telegram-bot-api:latest
     profiles: [bigfiles]
@@ -15,15 +48,6 @@ services:
     volumes:
       - tg-data:/var/lib/telegram-bot-api
 
-  agent:
-    build: {context: ., dockerfile: Dockerfile.agent}
-    restart: unless-stopped
-    env_file: .env
-    volumes:
-      - tg-data:/var/lib/telegram-bot-api   # same path as in the Bot API container: local file access
-      - ./work:/app/work
-      - ./out:/app/out
-      - ./public/agent:/app/public/agent
-
 volumes:
   tg-data:
+  caddy-data:
