@@ -30,19 +30,22 @@ done
 [ -s "$CACHE/yunet.onnx" ] || $CURL -o "$CACHE/yunet.onnx" \
   "https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
 
-# pre-download the Whisper model so the first transcription starts immediately
-python3 - <<PY
+# pre-download the Whisper model so the first transcription starts immediately. Not fatal: Hugging Face
+# rate-limits shared (VPN) IPs; then the model downloads on the first transcription instead (into the same cache).
+# HF_TOKEN (free token) lifts the limit, HF_ENDPOINT points at a mirror.
+python3 - <<PY || echo "WARNING: Whisper model not downloaded now - it will download on the first video"
 import sys, time; sys.path.insert(0, "scripts/reel")
 import preset
 from faster_whisper.utils import download_model
-for attempt in range(6):  # resumes partial files; survives a dropped VPN connection
+for attempt in range(4):  # resumes partial files; survives a dropped VPN connection
     try:
         download_model(preset.WHISPER_MODEL, cache_dir="$CACHE/whisper")
         break
     except Exception as e:
-        if attempt == 5:
+        if attempt == 3:
             raise
-        print(f"Whisper model download failed ({e}); retrying in 15 s", flush=True)
-        time.sleep(15)
+        wait = 30 * (attempt + 1)
+        print(f"Whisper model download failed ({str(e)[:120]}); retrying in {wait} s", flush=True)
+        time.sleep(wait)
 PY
 echo "reel pipeline ready"

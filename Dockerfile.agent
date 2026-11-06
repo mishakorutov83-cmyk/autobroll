@@ -14,8 +14,12 @@ RUN pip3 install --break-system-packages -q -r scripts/reel/requirements.txt -r 
 # scripts/reel changes, not on every code update
 COPY scripts/reel scripts/reel
 COPY public/fonts public/fonts
+# optional: a Hugging Face token lifts the download limit, HF_ENDPOINT points at a mirror (both from .env)
+ARG HF_TOKEN=""
+ARG HF_ENDPOINT=""
 # a checkout made on Windows has CRLF line endings — bash inside Linux can't run those scripts
-RUN find scripts -name '*.sh' -exec sed -i 's/\r$//' {} + && bash scripts/reel/setup.sh
+RUN find scripts -name '*.sh' -exec sed -i 's/\r$//' {} + \
+    && HF_TOKEN="$HF_TOKEN" HF_ENDPOINT="${HF_ENDPOINT:-https://huggingface.co}" bash scripts/reel/setup.sh
 COPY . .
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8080

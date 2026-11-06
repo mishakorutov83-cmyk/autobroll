@@ -7,7 +7,12 @@
 # Profiles combine: docker compose --profile tunnel --profile bigfiles up -d --build
 services:
   agent:
-    build: {context: ., dockerfile: Dockerfile.agent}
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+      args:
+        HF_TOKEN: ${HF_TOKEN:-}
+        HF_ENDPOINT: ${HF_ENDPOINT:-}
     restart: unless-stopped
     env_file: .env
     ports:
@@ -17,6 +22,7 @@ services:
       - ./work:/app/work
       - ./out:/app/out
       - ./public/agent:/app/public/agent
+      - models:/root/.cache/autobroll         # Whisper / face models: downloaded once, kept across rebuilds
 
   tunnel:                    # Cloudflare quick tunnel: prints a https://….trycloudflare.com address in its log
     image: cloudflare/cloudflared:latest
@@ -49,5 +55,6 @@ services:
       - tg-data:/var/lib/telegram-bot-api
 
 volumes:
+  models:
   tg-data:
   caddy-data:
