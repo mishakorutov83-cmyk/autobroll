@@ -12,6 +12,8 @@ whisper.cpp/
 # transcripts, music, waveforms, exports) — personal, never committed
 public/*
 !public/.gitkeep
+# Inter (SIL Open Font License) — shipped so the setup needs no font download
+!public/fonts/
 
 # pipeline temp files
 .captions-tmp/
