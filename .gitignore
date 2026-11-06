@@ -30,3 +30,7 @@ public/*
 # reel pipeline working dirs
 work/
 __pycache__/
+
+# speech model files downloaded by hand (agent/RUN_LOCAL.md)
+models/*
+!models/README.md

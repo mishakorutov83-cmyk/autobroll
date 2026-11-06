@@ -33,7 +33,9 @@ done
 # pre-download the Whisper model so the first transcription starts immediately. Not fatal: Hugging Face
 # rate-limits shared (VPN) IPs; then the model downloads on the first transcription instead (into the same cache).
 # HF_TOKEN (free token) lifts the limit, HF_ENDPOINT points at a mirror.
-python3 - <<PY || echo "WARNING: Whisper model not downloaded now - it will download on the first video"
+# REEL_SKIP_WHISPER=1 (the Docker image): no download at build time at all — a model folder in models/
+# or a one-time download on the first video into the persistent cache instead
+[ -n "${REEL_SKIP_WHISPER:-}" ] || python3 - <<PY || echo "WARNING: Whisper model not downloaded now - it will download on the first video"
 import sys, time; sys.path.insert(0, "scripts/reel")
 import preset
 from faster_whisper.utils import download_model

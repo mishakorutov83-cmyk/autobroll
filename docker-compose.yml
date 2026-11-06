@@ -7,12 +7,7 @@
 # Profiles combine: docker compose --profile tunnel --profile bigfiles up -d --build
 services:
   agent:
-    build:
-      context: .
-      dockerfile: Dockerfile.agent
-      args:
-        HF_TOKEN: ${HF_TOKEN:-}
-        HF_ENDPOINT: ${HF_ENDPOINT:-}
+    build: {context: ., dockerfile: Dockerfile.agent}
     restart: unless-stopped
     env_file: .env
     ports:
@@ -23,6 +18,7 @@ services:
       - ./out:/app/out
       - ./public/agent:/app/public/agent
       - models:/root/.cache/autobroll         # Whisper / face models: downloaded once, kept across rebuilds
+      - ./models:/app/models                   # optional: model files downloaded by hand (agent/RUN_LOCAL.md)
 
   tunnel:                    # Cloudflare quick tunnel: prints a https://….trycloudflare.com address in its log
     image: cloudflare/cloudflared:latest

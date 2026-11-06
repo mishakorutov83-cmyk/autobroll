@@ -16,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .config import MODELS, ROOT, SHEET_COLS, SHEET_ROWS, SHEET_STEP, WHISPER_MODEL, proj_dirs
+from .config import MODELS, ROOT, SHEET_COLS, SHEET_ROWS, SHEET_STEP, proj_dirs, whisper_model
 
 sys.path.insert(0, str(ROOT / "scripts" / "reel"))
 import prepare as R  # noqa: E402  (fetch / probe / faces are shared with the interview pipeline)
@@ -37,7 +37,10 @@ def transcribe(work: Path, language: str, prompt: str | None):
     t0 = time.time()
     wv = wave.open(str(work / "audio.wav"))
     audio = np.frombuffer(wv.readframes(wv.getnframes()), np.int16).astype(np.float32) / 32768
-    model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8", cpu_threads=os.cpu_count() or 4,
+    name = whisper_model()
+    if not Path(name).is_dir() and not list((MODELS / "whisper").glob(f"models--*{name}*/snapshots/*/model.bin")):
+        say("Скачиваю модель распознавания речи (1,6 ГБ, только в первый раз)…")
+    model = WhisperModel(name, device="cpu", compute_type="int8", cpu_threads=os.cpu_count() or 4,
                          download_root=str(MODELS / "whisper"))
     # the decoded array is passed directly: newer PyAV builds break faster-whisper's own file decoding
     segs, _ = model.transcribe(audio, language=language, word_timestamps=True, beam_size=5,
