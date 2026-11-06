@@ -16,7 +16,7 @@ Projects live on disk (agent/projects.py), so a restart does not lose a chat's p
 """
 from __future__ import annotations
 
-import asyncio, json, logging, os, re, shutil
+import asyncio, html, json, logging, os, re, shutil
 from pathlib import Path
 
 from aiogram import Bot, Dispatcher, F, Router
@@ -86,7 +86,9 @@ def menu(d: State):
 def menu_text(d: State) -> str:
     src = "\n".join(f"  {i + 1}. {Path(x).name if not x.startswith('http') else 'Google Drive'}" for i, x in enumerate(d.inputs)) or "  —"
     return (f"<b>Проект</b> {d.id}\nИсходники:\n{src}\n\n<b>Шаблон:</b> {d.template}\n<i>{templates().get(d.template, '')}</i>\n"
-            f"<b>Вариантов:</b> {d.variants} (+ основной монтаж)\n\nМожно прислать ещё файлы или нажать «Монтировать».")
+            f"<b>Вариантов:</b> {d.variants} (+ основной монтаж)\n"
+            + (f"<b>Задание:</b> {html.escape(d.brief[:600])}\n" if d.brief else "")
+            + "\nМожно прислать ещё файлы, написать задание — как монтировать своими словами — или нажать «Монтировать».")
 
 
 async def show_menu(m: Message, d: State):
@@ -111,7 +113,8 @@ async def start(m: Message):
         return await m.answer(f"Нет доступа. Ваш id: {m.from_user.id} — передайте его владельцу бота.")
     await m.answer("Я монтирую ролики по шаблону и делаю варианты с тем же смыслом.\n\n"
                    "1. Пришлите исходники: видео (лучше <b>файлом</b>, без сжатия) или ссылку на Google Drive.\n"
-                   "2. Выберите шаблон и число вариантов → «Монтировать».\n"
+                   "2. Выберите шаблон и число вариантов. Можно написать задание своими словами — "
+                   "например «до 30 секунд, начни с цены, жёлтые субтитры» (или подписью к видео). → «Монтировать».\n"
                    "3. Я пришлю план — подтвердите или напишите правки словами.\n"
                    "4. Получите готовые ролики с текстом поста.\n\n"
                    "/new — новый проект · /templates — шаблоны")
@@ -127,6 +130,15 @@ async def cmd_new(m: Message):
     if allowed(m.from_user.id):
         new_draft(m.chat.id)
         await m.answer("Новый проект. Присылайте исходники.")
+
+
+@router.message(Command("clearbrief"))
+async def cmd_clearbrief(m: Message):
+    if allowed(m.from_user.id):
+        d = draft(m.chat.id)
+        d.brief = ""
+        d.save()
+        await show_menu(m, d)
 
 
 @router.message(Command("templates"))
@@ -160,6 +172,8 @@ async def on_file(m: Message):
     else:
         await m.bot.download_file(f.file_path, dst)
     d.inputs.append(str(dst))
+    if m.caption and m.caption.strip():
+        d.brief = (d.brief + "\n" + m.caption.strip()).strip()[:4000]
     d.save()
     await note.delete()
     await show_menu(m, d)
@@ -260,6 +274,8 @@ async def cb_go(c: CallbackQuery):
     await c.answer()
     if not d.inputs:
         return await c.message.answer("Сначала пришлите исходники.")
+    if d.template == "free" and not d.brief:
+        return await c.message.answer("Для шаблона free напишите задание — как монтировать, своими словами.")
     if d.stage not in ("collect", "error"):
         return
     await c.message.edit_reply_markup(reply_markup=None)
@@ -299,6 +315,11 @@ async def on_feedback(m: Message):
         d.save()
         extra = "\nМного вариантов — это дольше: рендер ~3–5 мин на каждый на обычном ПК." if n > 10 else ""
         await m.answer(f"Вариантов: {n} (+ основной монтаж).{extra}")
+        return await show_menu(m, d)
+    if d and d.stage == "collect" and m.chat.id not in EDITING:  # «монтаж по заданию»
+        d.brief = (d.brief + "\n" + m.text.strip()).strip()[:4000]
+        d.save()
+        await m.answer("Записал задание. Можно дописать ещё — добавлю к нему. /clearbrief — очистить.")
         return await show_menu(m, d)
     if not d or m.chat.id not in EDITING or d.stage not in ("review", "done"):
         return await m.answer("Пришлите видео или ссылку на Google Drive. /help — как это работает.")

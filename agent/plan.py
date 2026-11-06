@@ -49,6 +49,10 @@ class Style(Strict):
     accent: str = Field(description="accent colour for highlighted words and graphics, #RRGGBB")
     caption_top: float = Field(description="vertical position of captions, % of frame height (55-72)")
     zoom_bias: float = Field(description="extra zoom multiplier on top of the shot sizes, 1.0-1.08")
+    caption_style: Literal["template", "plain", "clean", "pop"] = Field(
+        description="template = as the template says; plain = small white text, no highlight colour; "
+                    "clean = bold Inter, words brighten as spoken, accent colour on key words; "
+                    "pop = big bold words, the spoken word pops — use only if the human's brief asks for it")
 
 
 class EditPlan(Strict):

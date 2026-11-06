@@ -68,7 +68,7 @@ def _proj(pid: str) -> projects.State:
 def _view(st: projects.State, full: bool = False) -> dict:
     v = {"id": st.id, "title": st.title or st.id, "created": st.created, "stage": st.stage, "template": st.template,
          "variants": st.variants, "inputs": [Path(x).name if not x.startswith("http") else "Google Drive" for x in st.inputs],
-         "status": st.status[-12:], "error": st.error, "failed": st.failed, "queued": jobs.queued(), "owner": st.owner}
+         "status": st.status[-12:], "error": st.error, "brief": st.brief, "failed": st.failed, "queued": jobs.queued(), "owner": st.owner}
     res = projects.results(st)
     v["results_count"] = len(res)
     if full:
@@ -187,6 +187,7 @@ async def start(pid: str, req: Request):
     if tpl not in projects.templates():
         raise HTTPException(400, "нет такого шаблона")
     st.template, st.variants = tpl, max(1, min(MAX_VARIANTS, int(body.get("variants", st.variants))))
+    st.brief = str(body.get("brief", st.brief)).strip()[:4000]
     st.stage, st.status = "analysing", []
     st.save()
     _bg(jobs.analyse_and_plan(st))

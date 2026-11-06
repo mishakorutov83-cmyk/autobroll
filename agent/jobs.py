@@ -66,7 +66,7 @@ def _plan(st: State, feedback: str | None):
     pj = json.load(open(st.work / "project.json"))
     pj["template"] = st.template
     json.dump(pj, open(st.work / "project.json", "w"), ensure_ascii=False, indent=1)
-    ps = brain.plan(st.id, st.template, st.variants, feedback)
+    ps = brain.plan(st.id, st.template, st.variants, feedback, st.brief)
     rep = brain.check(st.id, ps)
     (st.work / "check.json").write_text(rep.model_dump_json(indent=1))
 

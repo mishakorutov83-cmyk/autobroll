@@ -1,0 +1,35 @@
+# Template: no fixed format — the human's brief (задание) decides. Only neutral defaults here,
+# used for whatever the brief does not say.
+name: free
+description: Без шаблона — монтаж только по вашему заданию своими словами.
+
+length: [20, 90]
+speed: 1.05
+
+structure:
+  - hook: сильнейшая реальная фраза или самый интересный кадр в первые 3 с
+  - body: история по смыслу, без пауз, повторов и пустых кадров
+  - finale: вывод, цена или живая финальная реплика
+
+cutting:
+  avg_shot: 5.0
+  shot_sizes: {N: 1.0, M: 1.1, C: 1.2}
+  remove: [паузы, повторы, оговорки, пустые проводки камеры, чёрные кадры]
+  keep_person: true
+
+captions:
+  preset: plain
+  max_chars: 34
+  accent: "#FFD54A"
+  top: 68
+  accents_per_clip: 1
+
+overlays:
+  hook_headline: если задание просит
+  item_labels: если задание просит
+
+end_card: null
+music: none
+
+variants:
+  allowed: [хук, порядок, длина, стиль субтитров, крупности, заголовок]

@@ -35,6 +35,7 @@ class State:
     error: str = ""
     failed: str = ""  # step to retry after an error: plan | replan | render
     feedback: str = ""  # the last revision request (retried with «replan»)
+    brief: str = ""  # «монтаж по заданию»: how to edit, in the human's own words
 
     @property
     def work(self) -> Path:

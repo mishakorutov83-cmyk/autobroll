@@ -130,7 +130,9 @@ def build(proj: str, plan: EditPlan, template: str) -> Path:
     work, _ = proj_dirs(proj)
     tpl = yaml.safe_load(load_template(template))
     sizes = {**{"N": P.N, "M": P.M, "C": P.C}, **(tpl.get("cutting", {}).get("shot_sizes") or {})}
-    cap = tpl.get("captions", {})
+    cap = dict(tpl.get("captions", {}))
+    if plan.style.caption_style != "template":  # the human's brief asked for another caption look
+        cap["preset"] = {"plain": "plain", "clean": "clean", "pop": "default"}[plan.style.caption_style]
     srcs: dict[int, Source] = {}
     clips, captions, titles = [], [], []
     for c in plan.clips:

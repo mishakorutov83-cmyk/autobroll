@@ -5,6 +5,7 @@ const $ = (s, el = document) => el.querySelector(s);
 const app = $('#app');
 const CHUNK = 8 * 1024 * 1024; // Safari on iPhone drops long requests — small resumable chunks
 const UP = {}; // pid → [{name, size, sent, note, done}]
+const SEL = {}; // pid → {template, variants, brief} chosen on the collect screen, kept across re-renders
 let pollTimer = null;
 let meta = {templates: [], max_variants: 30};
 
@@ -166,6 +167,7 @@ async function viewProject(pid) {
 }
 
 function viewCollect(p) {
+  const sel = (SEL[p.id] ||= {template: p.template, variants: p.variants, brief: p.brief || ''});
   const ups = (UP[p.id] || []).filter((f) => !f.done);
   const files = p.inputs
     .map((n, i) => `<div class="file"><div class="row"><span class="fname">✅ ${esc(n)}</span><button class="x" data-del="${i}" aria-label="Убрать">✕</button></div></div>`)
@@ -175,7 +177,7 @@ function viewCollect(p) {
       <div class="progress"><i style="width:${(100 * f.sent) / f.size}%"></i></div><div class="muted" data-note>${esc(f.note || mb(f.size))}</div></div>`)
     .join('');
   const tpls = meta.templates
-    .map((t) => `<label class="tpl ${t.name === p.template ? 'on' : ''}"><input type="radio" name="tpl" value="${t.name}" ${t.name === p.template ? 'checked' : ''}><b>${esc(t.name)}</b><span>${esc(t.description)}</span></label>`)
+    .map((t) => `<label class="tpl ${t.name === sel.template ? 'on' : ''}"><input type="radio" name="tpl" value="${t.name}" ${t.name === sel.template ? 'checked' : ''}><b>${esc(t.name)}</b><span>${esc(t.description)}</span></label>`)
     .join('');
   app.innerHTML = `
     <div class="card">
@@ -188,8 +190,13 @@ function viewCollect(p) {
       </details>
     </div>
     <div class="card"><h2>2. Шаблон</h2>${tpls}</div>
+    <div class="card stack">
+      <h2>3. Задание <span class="muted" style="font-weight:400">— необязательно</span></h2>
+      <p class="muted" style="margin:0">Как смонтировать — своими словами. Задание важнее шаблона, но смысл сказанного не меняется.</p>
+      <textarea id="brief" placeholder="Например: «до 30 секунд, начни с цены, убери всё про доставку, жёлтые субтитры, в конце — вывод про качество»">${esc(sel.brief)}</textarea>
+    </div>
     <div class="card">
-      <h2>3. Сколько вариантов</h2>
+      <h2>4. Сколько вариантов</h2>
       <div class="stepper"><button id="minus" aria-label="Меньше">−</button><output id="n">${p.variants}</output><button id="plus" aria-label="Больше">＋</button></div>
       <div class="chips">${[1, 3, 5, 10, 20].map((n) => `<button data-n="${n}">${n}</button>`).join('')}</div>
       <p class="muted" id="nhint"></p>
@@ -197,9 +204,9 @@ function viewCollect(p) {
     <button class="btn" id="go">▶ Монтировать</button>
     <p class="muted center" id="gohint"></p>`;
 
-  let n = p.variants;
+  let n = sel.variants;
   const setN = (v) => {
-    n = Math.max(1, Math.min(meta.max_variants, v));
+    n = sel.variants = Math.max(1, Math.min(meta.max_variants, v));
     $('#n').textContent = n;
     $('#nhint').textContent = `Основной монтаж + ${n} вар. Рендер ~3–5 мин на каждый ролик${n > 10 ? ' — это надолго' : ''}.`;
   };
@@ -208,8 +215,10 @@ function viewCollect(p) {
   $('#plus').onclick = () => setN(n + 1);
   app.querySelectorAll('[data-n]').forEach((b) => (b.onclick = () => setN(+b.dataset.n)));
   app.querySelectorAll('.tpl input').forEach((r) => (r.onchange = () => {
+    sel.template = r.value;
     app.querySelectorAll('.tpl').forEach((l) => l.classList.toggle('on', $('input', l).checked));
   }));
+  $('#brief').oninput = (e) => (sel.brief = e.target.value);
   app.querySelectorAll('[data-del]').forEach((b) => (b.onclick = async () => {
     await api(`/api/projects/${p.id}/inputs/${b.dataset.del}/delete`, {method: 'POST'});
     route();
@@ -233,8 +242,12 @@ function viewCollect(p) {
   $('#go').onclick = async () => {
     $('#go').disabled = true;
     try {
-      const tpl = (app.querySelector('.tpl input:checked') || {}).value || p.template;
-      await api(`/api/projects/${p.id}/start`, {method: 'POST', body: {template: tpl, variants: n}});
+      if (sel.template === 'free' && !sel.brief.trim()) {
+        toast('Для «free» напишите задание');
+        $('#go').disabled = false;
+        return;
+      }
+      await api(`/api/projects/${p.id}/start`, {method: 'POST', body: {template: sel.template, variants: n, brief: sel.brief}});
       route();
     } catch (err) {
       toast(err.message);
@@ -272,6 +285,8 @@ function paint(pid, it) {
 
 async function uploadOne(pid, it) {
   let fails = 0;
+  it.note = 'загружаю…';
+  paint(pid, it);
   for (;;) {
     try {
       if (!it.uid) it.uid = (await api(`/api/projects/${pid}/uploads`, {method: 'POST', body: {name: it.name, size: it.size}})).uid;
@@ -350,6 +365,7 @@ function viewReview(p) {
     : '';
   app.innerHTML = `
     <div class="card"><h2>План готов</h2><p class="muted">Проверьте хук, порядок и текст. Если всё хорошо — «Рендер». Если нет — напишите правки словами.</p>
+      ${p.brief ? `<div class="caption" style="margin-bottom:12px"><b>Задание:</b> ${esc(p.brief)}</div>` : ''}
       <button class="btn" id="render">🎬 Рендер (${p.variants + 1} роликов)</button></div>
     ${checks}
     ${planCards(p.plans_md)}

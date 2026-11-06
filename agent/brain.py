@@ -19,7 +19,7 @@ from .plan import EditPlan, MeaningReport, PlanSet
 
 SYSTEM = """Ты — монтажёр коротких вертикальных роликов (Reels / Shorts / TikTok, 9:16).
 Тебе дают факты об исходниках (транскрипт с таймингом каждого слова, где в кадре лицо, контактные листы кадров
-с подписью «s<номер> <секунда>») и ШАБЛОН монтажа. Ты пишешь монтажные планы.
+с подписью «s<номер> <секунда>»), ШАБЛОН монтажа и иногда ЗАДАНИЕ человека своими словами. Ты пишешь монтажные планы.
 
 Правила, которые важнее шаблона:
 1. Смысл сказанного не меняется никогда. Нельзя склеивать фразы так, чтобы получилось утверждение, которого человек
@@ -32,10 +32,14 @@ SYSTEM = """Ты — монтажёр коротких вертикальных 
    а в кадре другое — поставь insert: картинку нужного предмета из другого момента (по контактным листам) поверх
    звука клипа. Пустые проводки, чёрные кадры, руки, расфокус — вырезай или перекрывай insert'ом.
 5. Заголовки (hook) и подписи (label) — только факты из речи или того, что видно в кадре. Без выдуманных цифр и обещаний.
-6. Длительность итога (сумма клипов / speed) — в пределах length шаблона.
+6. Длительность итога (сумма клипов / speed) — в пределах length шаблона, если задание не говорит другое.
 7. Варианты отличаются для зрителя по-настоящему: другой хук (другая реальная фраза или другой заголовок), другой
    порядок блоков, другая длина, другой стиль (accent, caption_top, zoom_bias). Смысл и факты у всех одинаковые.
    Не делай варианты, отличающиеся только цветом.
+8. ЗАДАНИЕ человека важнее шаблона: длина, порядок, с чего начать, что убрать, стиль субтитров (style.caption_style,
+   accent, caption_top), заголовки и подписи — делай, как он просит. Но правила 1–5 (смысл, резка по словам, точный
+   текст, никаких выдуманных фактов) задание не отменяет: если просьба требует исказить смысл или придумать факт,
+   сделай ближайшее честное решение и объясни это в notes. Задание относится ко всем вариантам, если в нём не сказано иное.
 
 notes пиши по-русски, коротко: логика истории, что вырезано и почему — это читает человек перед рендером."""
 
@@ -79,7 +83,7 @@ def _call(messages: list, schema, max_tokens: int = 64000):
     return parsed
 
 
-def plan(proj: str, template: str, variants: int, feedback: str | None = None) -> PlanSet:
+def plan(proj: str, template: str, variants: int, feedback: str | None = None, brief: str = "") -> PlanSet:
     if os.environ.get("AGENT_FAKE_BRAIN"):
         ps = _fake_plan(proj, variants)
         save(proj, ps)
@@ -87,11 +91,12 @@ def plan(proj: str, template: str, variants: int, feedback: str | None = None) -
     work, _ = proj_dirs(proj)
     facts, images = describe(proj)
     content = [{"type": "text", "text": f"# ШАБЛОН\n```yaml\n{load_template(template)}\n```"},
+               *([{"type": "text", "text": f"# ЗАДАНИЕ ЧЕЛОВЕКА (важнее шаблона, см. правило 8)\n{brief.strip()}"}] if brief.strip() else []),
                {"type": "text", "text": f"# ИСХОДНИКИ\n{facts}"},
                {"type": "text", "text": "Контактные листы кадров (подпись на каждом кадре: источник и секунда):"},
                *[_image(p) for p in images],
                {"type": "text", "text": f"Сделай основной монтаж (id main) и {min(variants, BATCH)} вариантов (v1..v{min(variants, BATCH)}). "
-                                        "Сначала найди в транскрипте лучшую историю под шаблон, потом режь."}]
+                                        "Сначала найди в транскрипте лучшую историю под шаблон" + (" и задание" if brief.strip() else "") + ", потом режь."}]
     messages = [{"role": "user", "content": content}]
     prev = work / "plans.json"
     if feedback and prev.exists():
@@ -149,7 +154,12 @@ def save(proj: str, ps: PlanSet):
 
 def load(proj: str) -> PlanSet:
     work, _ = proj_dirs(proj)
-    return PlanSet.model_validate_json((work / "plans.json").read_text())
+    d = json.loads((work / "plans.json").read_text())
+    for p in d["plans"]:  # plans written before a field existed
+        p["style"].setdefault("caption_style", "template")
+        for x in p.get("inserts", []):
+            x.setdefault("mode", "full")
+    return PlanSet.model_validate(d)
 
 
 def review(ps: PlanSet) -> str:
@@ -188,6 +198,6 @@ def _fake_plan(proj: str, variants: int) -> PlanSet:
         order = clips[k % len(clips):] + clips[:k % len(clips)]
         plans.append({"id": "main" if k == 0 else f"v{k}", "angle": "тест без Claude" if k == 0 else f"тест: старт с фразы {k + 1}",
                       "speed": 1.05, "clips": order, "overlays": [], "inserts": [],
-                      "style": {"accent": "#FFFFFF", "caption_top": 66 + k % 3 * 3, "zoom_bias": 1.0},
+                      "style": {"accent": "#FFFFFF", "caption_top": 66 + k % 3 * 3, "zoom_bias": 1.0, "caption_style": "template"},
                       "caption_text": "Тестовый монтаж без Claude", "hashtags": ["#тест"], "notes": "AGENT_FAKE_BRAIN"})
     return PlanSet.model_validate({"plans": plans})
