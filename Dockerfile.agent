@@ -11,6 +11,8 @@ COPY scripts/reel/requirements.txt scripts/reel/requirements.txt
 COPY agent/requirements.txt agent/requirements.txt
 RUN pip3 install --break-system-packages -q -r scripts/reel/requirements.txt -r agent/requirements.txt
 COPY . .
+# a checkout made on Windows has CRLF line endings — bash inside Linux can't run those scripts
+RUN find . -path ./node_modules -prune -o -name '*.sh' -exec sed -i 's/\r$//' {} +
 # fonts, face model, Whisper model, Remotion's headless Chrome — baked into the image
 RUN bash scripts/reel/setup.sh
 CMD ["python3", "-m", "agent.bot"]

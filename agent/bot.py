@@ -30,6 +30,13 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from .config import TEMPLATES, proj_dirs
 
+# .env saved by Windows Notepad can leave a stray \r or spaces around values
+for _k in ("BOT_TOKEN", "ANTHROPIC_API_KEY", "ALLOWED_USERS", "BOT_API_URL", "AGENT_MODEL", "AGENT_EFFORT"):
+    if _k in os.environ:
+        os.environ[_k] = os.environ[_k].strip().strip('"').strip("'")
+        if not os.environ[_k]:
+            del os.environ[_k]
+
 log = logging.getLogger("agent.bot")
 router = Router()
 JOB = asyncio.Semaphore(1)  # one heavy job at a time (CPU / RAM bound)
