@@ -13,7 +13,7 @@
 |---|---|---|
 | Токен бота | Telegram → @BotFather → /newbot | `BOT_TOKEN` |
 | Ваш Telegram id | Telegram → @userinfobot | `ALLOWED_USERS` |
-| api_id и api_hash | https://my.telegram.org → API development tools | `TELEGRAM_API_ID`, `TELEGRAM_API_HASH` |
+| api_id и api_hash — *необязательно*, только для файлов > 20 МБ прямо в бота | https://my.telegram.org → API development tools | `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, `BOT_API_URL` |
 | Ключ Claude API | https://console.anthropic.com → API keys (нужен баланс) | `ANTHROPIC_API_KEY` |
 
 > Из России Claude API не открывается — на компьютере должен быть включён VPN в режиме
@@ -32,6 +32,9 @@ cp .env.example .env
 ```bash
 docker compose up -d --build
 ```
+Так бот принимает ссылки на Google Drive (любой размер) и видеофайлы до 20 МБ.
+Чтобы присылать большие файлы прямо в бота: заполнить `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`,
+раскомментировать `BOT_API_URL` в `.env` и запускать `docker compose --profile bigfiles up -d --build`.
 Первый раз — 15–25 минут: скачиваются модель распознавания речи (~1,5 ГБ), браузер для рендера, шрифты.
 Дальше запуск за секунды. Проверить, что бот жив: написать ему в Telegram `/start`.
 

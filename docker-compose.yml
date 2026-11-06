@@ -1,9 +1,12 @@
 # Video agent on a VPS (outside RU — the Claude API is not available from Russia).
 #   cp .env.example .env   # fill in tokens
-#   docker compose up -d --build
+#   docker compose up -d --build                         bot only: Drive links + files ≤ 20 MB
+#   docker compose --profile bigfiles up -d --build      + own Bot API server: files up to 2 GB
+#                                                        (needs TELEGRAM_API_ID/HASH and BOT_API_URL in .env)
 services:
   telegram-bot-api:          # self-hosted Bot API: files up to 2 GB instead of 20 MB
     image: aiogram/telegram-bot-api:latest
+    profiles: [bigfiles]
     restart: unless-stopped
     environment:
       TELEGRAM_API_ID: ${TELEGRAM_API_ID}
@@ -15,10 +18,7 @@ services:
   agent:
     build: {context: ., dockerfile: Dockerfile.agent}
     restart: unless-stopped
-    depends_on: [telegram-bot-api]
     env_file: .env
-    environment:
-      BOT_API_URL: http://telegram-bot-api:8081
     volumes:
       - tg-data:/var/lib/telegram-bot-api   # same path as in the Bot API container: local file access
       - ./work:/app/work
