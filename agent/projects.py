@@ -92,8 +92,34 @@ def list_projects(owner: str | None = None) -> list[State]:
     return sorted(out, key=lambda s: s.created, reverse=True)
 
 
+def adopt_old_projects():
+    """projects analysed by the first bot version have project.json but no state.json — keep their
+    (slow) analysis: make them projects that only need «Повторить» → straight to planning"""
+    root = ROOT / "work" / "agent"
+    chats_p = root / "tg_chats.json"
+    chats = json.loads(chats_p.read_text()) if chats_p.exists() else {}
+    for pj in root.glob("*/project.json"):
+        d = pj.parent
+        if (d / "state.json").exists():
+            continue
+        src = json.loads(pj.read_text())
+        m = re.match(r"tg(\d+)_", d.name)
+        st = State(id=d.name, owner=m.group(1) if m else "web", created=pj.stat().st_mtime,
+                   title="Ролик из Telegram" if m else d.name, inputs=[x["input"] for x in src["sources"]],
+                   template=src.get("template", "live_showroom"), stage="error", failed="plan",
+                   error="Видео уже разобрано. Нажмите «Повторить» (или «Монтировать» в боте) — сразу начнётся монтаж.")
+        if (d / "plans.json").exists():
+            st.stage, st.failed, st.error = "review", "", ""
+        st.save()
+        if m and m.group(1) not in chats:
+            chats[m.group(1)] = st.id
+    if chats:
+        chats_p.write_text(json.dumps(chats))
+
+
 def recover_after_restart():
     """a job that was running when the process stopped will never finish — let the user retry it"""
+    adopt_old_projects()
     for st in list_projects():
         if st.stage in BUSY:
             st.failed = "render" if st.stage == "rendering" else "plan"

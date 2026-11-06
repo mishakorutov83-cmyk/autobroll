@@ -115,6 +115,11 @@ async def start(m: Message):
                    "3. Я пришлю план — подтвердите или напишите правки словами.\n"
                    "4. Получите готовые ролики с текстом поста.\n\n"
                    "/new — новый проект · /templates — шаблоны")
+    pid = _chats().get(str(m.chat.id))
+    d = projects.load(pid) if pid else None
+    if d and d.stage == "error" and jobs.analysed(d):  # e.g. stopped on an empty API balance
+        await m.answer("У вас есть разобранный ролик, который не успел смонтироваться:\n" + d.error, parse_mode=None)
+        await show_menu(m, d)
 
 
 @router.message(Command("new"))
