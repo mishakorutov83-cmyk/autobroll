@@ -216,7 +216,7 @@ async def heavy(msg: Message, title: str, fn, *args):
             res = await asyncio.to_thread(fn, *args)
         except Exception as e:  # report, keep the bot alive
             log.error(traceback.format_exc())
-            await status.edit_text(f"❌ {title}: {type(e).__name__}: {str(e)[:300]}")
+            await status.edit_text(f"❌ {title}: {type(e).__name__}: {str(e)[:300]}{api_hint(e)}", parse_mode=None)
             raise
         await status.edit_text(f"✅ {title} — {time.time() - t0:.0f} с")
         return res
@@ -256,6 +256,22 @@ def _plan(d: Draft, feedback: str | None):
     (work / "check.json").write_text(rep.model_dump_json(indent=1))
 
 
+def ingested(d: Draft) -> bool:
+    pj = proj_dirs(d.proj)[0] / "project.json"
+    return pj.exists() and [x["input"] for x in json.load(open(pj))["sources"]] == d.inputs
+
+
+def api_hint(e: Exception) -> str:
+    t = str(e).lower()
+    if "credit balance" in t or "billing" in t:
+        return "\n\nНа счёте Claude API нет денег: console.anthropic.com → Billing. Потом снова нажмите «Монтировать» — разбор повторять не придётся."
+    if "authentication" in t or "api key" in t or "x-api-key" in t:
+        return "\n\nНеверный ANTHROPIC_API_KEY в .env."
+    if "connection" in t or "forbidden" in t or "region" in t:
+        return "\n\nНет связи с Claude API — проверьте VPN («для всей системы»)."
+    return ""
+
+
 @router.callback_query(F.data == "go")
 async def cb_go(c: CallbackQuery):
     d = draft(c.message.chat.id)
@@ -269,11 +285,12 @@ async def cb_go(c: CallbackQuery):
     from .ingest import ingest
 
     try:
-        await heavy(c.message, "Разбираю исходники (речь, кадры, лица)", ingest, d.proj, d.inputs)
+        if not ingested(d):  # a retry (e.g. after topping up the API balance) skips the slow analysis
+            await heavy(c.message, "Разбираю исходники (речь, кадры, лица)", ingest, d.proj, d.inputs)
         await heavy(c.message, f"Монтирую по шаблону {d.template}", _plan, d, None)
     except Exception:
         d.stage = "collect"
-        return
+        return await show_menu(c.message, d)  # buttons back, so «Монтировать» can be pressed again
     await send_plan(c.message, d)
 
 
