@@ -86,7 +86,7 @@ def plan(proj: str, template: str, variants: int, feedback: str | None = None) -
                {"type": "text", "text": f"# ИСХОДНИКИ\n{facts}"},
                {"type": "text", "text": "Контактные листы кадров (подпись на каждом кадре: источник и секунда):"},
                *[_image(p) for p in images],
-               {"type": "text", "text": f"Сделай основной монтаж (id main) и {variants} вариантов (v1..v{variants}). "
+               {"type": "text", "text": f"Сделай основной монтаж (id main) и {min(variants, BATCH)} вариантов (v1..v{min(variants, BATCH)}). "
                                         "Сначала найди в транскрипте лучшую историю под шаблон, потом режь."}]
     messages = [{"role": "user", "content": content}]
     prev = work / "plans.json"
@@ -95,8 +95,33 @@ def plan(proj: str, template: str, variants: int, feedback: str | None = None) -
                      {"role": "user", "content": f"Правки от человека:\n{feedback}\n\nПерепиши планы с учётом правок. "
                                                  "То, что правки не затрагивают, оставь как было."}]
     ps = _call(messages, PlanSet)
+    if not feedback:
+        ps = _more(messages, ps, variants)
     save(proj, ps)
     return ps
+
+
+BATCH = 8  # variants per request — keeps one answer well under the output limit
+
+
+def _more(messages: list, ps: PlanSet, variants: int) -> PlanSet:
+    """many variants: ask for the rest in batches, each batch told what already exists"""
+    plans = list(ps.plans)
+    while len(plans) - 1 < variants:
+        have = len(plans) - 1
+        k = min(BATCH, variants - have)
+        known = "\n".join(f"- {p.id}: {p.angle}; первая фраза: «{p.clips[0].caption[:60] if p.clips else ''}»" for p in plans)
+        msg = messages[:1] + [{"role": "user", "content":
+            f"Уже сделаны планы:\n{known}\n\nСделай ещё {k} вариантов с id v{have + 1}..v{have + k}. Каждый должен "
+            "отличаться от всех уже сделанных: другая первая фраза или заголовок, другой порядок или длина. "
+            "Основной монтаж (main) не повторяй."}]
+        more = [p for p in _call(msg, PlanSet).plans if p.id != "main"][:k]
+        if not more:
+            break
+        for i, p in enumerate(more):  # ids must stay unique whatever the model returned
+            p.id = f"v{have + 1 + i}"
+        plans += more
+    return PlanSet(plans=plans)
 
 
 def check(proj: str, ps: PlanSet) -> MeaningReport:

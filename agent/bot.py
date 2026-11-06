@@ -44,6 +44,7 @@ ALLOWED = {int(x) for x in re.findall(r"\d+", os.environ.get("ALLOWED_USERS", ""
 LOCAL_API = bool(os.environ.get("BOT_API_URL"))
 SEND_LIMIT = (2000 if LOCAL_API else 49) * 1024 * 1024
 DRIVE = re.compile(r"https?://drive\.google\.com/\S+")
+MAX_VARIANTS = int(os.environ.get("MAX_VARIANTS", 30))
 
 
 @dataclass
@@ -79,9 +80,11 @@ def menu(d: Draft):
         kb.button(text=("✅ " if name == d.template else "") + name, callback_data=f"tpl:{name}")
     for n in (1, 3, 5, 10):
         kb.button(text=("✅ " if n == d.variants else "") + f"{n} вар.", callback_data=f"n:{n}")
+    custom = d.variants not in (1, 3, 5, 10)
+    kb.button(text=(f"✅ {d.variants} вар." if custom else "✏️ Своё число"), callback_data="n:custom")
     kb.button(text="▶️ Монтировать", callback_data="go")
     kb.button(text="🗑 Сбросить", callback_data="reset")
-    kb.adjust(*([1] * len(templates())), 4, 2)
+    kb.adjust(*([1] * len(templates())), 5, 2)
     return kb.as_markup()
 
 
@@ -186,6 +189,9 @@ async def cb_tpl(c: CallbackQuery):
 @router.callback_query(F.data.startswith("n:"))
 async def cb_n(c: CallbackQuery):
     d = draft(c.message.chat.id)
+    if c.data == "n:custom":
+        await c.answer()
+        return await c.message.answer(f"Напишите число вариантов — от 1 до {MAX_VARIANTS}.")
     d.variants = int(c.data[2:])
     await c.message.edit_text(menu_text(d), reply_markup=menu(d))
     await c.answer()
@@ -285,6 +291,14 @@ async def on_feedback(m: Message):
     if not allowed(m.from_user.id):
         return
     d = DRAFTS.get(m.chat.id)
+    if d and d.stage == "collect" and re.fullmatch(r"\s*\d+\s*(вар\w*)?\s*", m.text):
+        n = int(re.search(r"\d+", m.text).group())
+        if not 1 <= n <= MAX_VARIANTS:
+            return await m.answer(f"Можно от 1 до {MAX_VARIANTS} вариантов.")
+        d.variants = n
+        extra = "\nМного вариантов — это дольше: рендер ~3–5 мин на каждый на обычном ПК." if n > 10 else ""
+        await m.answer(f"Вариантов: {n} (+ основной монтаж).{extra}")
+        return await show_menu(m, d)
     if not d or d.stage != "feedback":
         return await m.answer("Пришлите видео или ссылку на Google Drive. /help — как это работает.")
     d.stage = "planning"
