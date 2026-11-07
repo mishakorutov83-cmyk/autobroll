@@ -10,7 +10,7 @@ import asyncio, hashlib, hmac, json, os, re, secrets, time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import inbox as inbox_mod, jobs, pricing, projects
@@ -83,6 +83,12 @@ def _view(st: projects.State, full: bool = False) -> dict:
 
 
 # ---------------------------------------------------------------- auth
+
+@app.get("/health")
+async def health():
+    """connectivity check: open <address>/health in the phone's browser — «ok» means the whole route works"""
+    return PlainTextResponse("ok")
+
 
 @app.get("/api/me")
 async def me(req: Request):

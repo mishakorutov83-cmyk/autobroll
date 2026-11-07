@@ -22,7 +22,21 @@
   <span class="spacer"></span>
   <button id="logout" class="link-btn" hidden>Выйти</button>
 </header>
-<main id="app" aria-live="polite"></main>
+<main id="app" aria-live="polite">
+  <div class="card" id="boot"><h2>Загружаю…</h2>
+    <p class="muted">Если эта надпись не исчезает, потяните страницу вниз для обновления. Проверка связи: добавьте к адресу /health — должно появиться «ok».</p></div>
+</main>
+<noscript><div style="padding:16px">Для работы приложения нужен JavaScript — включите его в настройках Safari.</div></noscript>
+<script>
+// a script that fails to start (old Safari, a half-loaded page) must say so instead of leaving a blank screen
+window.addEventListener('error', function (e) {
+  var a = document.getElementById('app');
+  if (!a || (e.target && e.target !== window && e.target.tagName !== 'SCRIPT')) return;
+  var m = String(e.message || 'не загрузился app.js').replace(/</g, '&lt;');
+  a.innerHTML = '<div class="card error">Скрипт страницы не запустился: ' + m + ' (' + String(e.filename || '').split('/').pop() + ':' + (e.lineno || 0) +
+    ').<br><br>Обновите страницу. Если повторяется — пришлите этот текст и версию iOS.</div>';
+}, true);
+</script>
 <div id="toast" role="status" hidden></div>
 <script src="app.js"></script>
 </body>
