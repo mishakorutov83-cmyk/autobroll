@@ -15,7 +15,8 @@ services:
     volumes:
       - tg-data:/var/lib/telegram-bot-api   # same path as in the Bot API container: local file access
       - ./work:/app/work
-      - ./out:/app/out
+      - ./out:/app/out                         # finished videos: out/ready/<date>_<name>/
+      - ./inbox:/app/inbox                     # drop source videos here; the bot lists them («📁 Папка сервера»)
       - ./public/agent:/app/public/agent
       - models:/root/.cache/autobroll         # Whisper / face models: downloaded once, kept across rebuilds
       - ./models:/app/models                   # optional: model files downloaded by hand (agent/RUN_LOCAL.md)

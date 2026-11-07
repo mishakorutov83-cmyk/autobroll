@@ -27,6 +27,10 @@ def llm(step: str) -> tuple[str, str]:
     key = {"variants": "VARIANT", "check": "CHECK"}[step]
     return os.environ.get(f"AGENT_{key}_MODEL") or model, os.environ.get(f"AGENT_{key}_EFFORT") or effort
 
+# server-side files: sources are dropped into INBOX, finished videos are published to READY (out/ready)
+INBOX = Path(os.environ.get("AGENT_INBOX") or ROOT / "inbox")
+READY = ROOT / "out" / "ready"
+
 # analysis
 # speech model: REEL_WHISPER (name or folder), else files dropped into models/whisper-large-v3-turbo/
 # (config.json, model.bin, preprocessor_config.json, tokenizer.json, vocabulary.json — downloaded by hand),

@@ -34,3 +34,7 @@ __pycache__/
 # speech model files downloaded by hand (agent/RUN_LOCAL.md)
 models/*
 !models/README.md
+
+# source videos dropped into the server inbox
+inbox/*
+!inbox/README.md

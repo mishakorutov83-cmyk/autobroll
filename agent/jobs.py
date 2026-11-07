@@ -112,6 +112,14 @@ async def render(st: State) -> list[dict] | None:
     except Exception as e:
         _fail(st, "render", e)
         return None
+    from . import inbox
+
+    try:
+        folder = await asyncio.to_thread(inbox.publish, st)
+        if folder:
+            st.say(f"📁 Сохранено на сервере: out/ready/{folder.name}/")
+    except Exception as e:  # the videos exist either way (out/); a failed publish must not lose them
+        log.warning("publish failed: %s", e)
     st.stage = "done"
     st.save()
     return projects.results(st)

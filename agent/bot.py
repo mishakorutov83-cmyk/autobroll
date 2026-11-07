@@ -27,7 +27,7 @@ from aiogram.filters import Command, CommandStart
 from aiogram.types import CallbackQuery, FSInputFile, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from . import jobs, pricing, projects
+from . import inbox, jobs, pricing, projects
 from .config import ROOT
 from .projects import State, templates
 
@@ -77,9 +77,10 @@ def menu(d: State):
         kb.button(text=("✅ " if n == d.variants else "") + f"{n} вар.", callback_data=f"n:{n}")
     custom = d.variants not in (1, 3, 5, 10)
     kb.button(text=(f"✅ {d.variants} вар." if custom else "✏️ Своё число"), callback_data="n:custom")
+    kb.button(text="📁 Папка сервера", callback_data="inbox")
     kb.button(text="▶️ Монтировать", callback_data="go")
     kb.button(text="🗑 Сбросить", callback_data="reset")
-    kb.adjust(*([1] * len(templates())), 5, 2)
+    kb.adjust(*([1] * len(templates())), 5, 1, 2)
     return kb.as_markup()
 
 
@@ -88,7 +89,8 @@ def menu_text(d: State) -> str:
     return (f"<b>Проект</b> {d.id}\nИсходники:\n{src}\n\n<b>Шаблон:</b> {d.template}\n<i>{templates().get(d.template, '')}</i>\n"
             f"<b>Вариантов:</b> {d.variants} (+ основной монтаж)\n"
             + (f"<b>Задание:</b> {html.escape(d.brief[:600])}\n" if d.brief else "")
-            + "\nМожно прислать ещё файлы, написать задание — как монтировать своими словами — или нажать «Монтировать».")
+            + "\nВидео: пришлите сюда, ссылкой Google Drive или положите в папку сервера и нажмите «📁 Папка сервера». "
+              "Можно написать задание — как монтировать своими словами — и нажать «Монтировать».")
 
 
 async def show_menu(m: Message, d: State):
@@ -112,7 +114,8 @@ async def start(m: Message):
     if not allowed(m.from_user.id):
         return await m.answer(f"Нет доступа. Ваш id: {m.from_user.id} — передайте его владельцу бота.")
     await m.answer("Я монтирую ролики по шаблону и делаю варианты с тем же смыслом.\n\n"
-                   "1. Пришлите исходники: видео (лучше <b>файлом</b>, без сжатия) или ссылку на Google Drive.\n"
+                   "1. Исходники: положите видео в папку <b>inbox</b> на сервере и нажмите «📁 Папка сервера» "
+                   "(любой размер, быстрее всего) — или пришлите файл (до 20 МБ) / ссылку на Google Drive.\n"
                    "2. Выберите шаблон и число вариантов. Можно написать задание своими словами — "
                    "например «до 30 секунд, начни с цены, жёлтые субтитры» (или подписью к видео). → «Монтировать».\n"
                    "3. Я пришлю план — подтвердите или напишите правки словами.\n"
@@ -159,8 +162,8 @@ async def on_file(m: Message):
     if m.document and not (m.document.mime_type or "").startswith("video/"):
         return await m.answer("Это не видео. Пришлите видеофайл или ссылку на Google Drive.")
     if obj.file_size and obj.file_size > 20 * 1024 * 1024 and not LOCAL_API:
-        return await m.answer("Файл больше 20 МБ — облачный Telegram API не отдаёт такие боту. "
-                              "Пришлите ссылку на Google Drive (или включите свой Bot API сервер).")
+        return await m.answer("Файл больше 20 МБ — облачный Telegram API не отдаёт такие боту. Положите его в папку inbox "
+                              "на сервере и нажмите «📁 Папка сервера» в меню (или пришлите ссылку на Google Drive).")
     inbox = d.work / "inbox"
     inbox.mkdir(parents=True, exist_ok=True)
     ext = Path(getattr(obj, "file_name", None) or "video.mp4").suffix or ".mp4"
@@ -191,6 +194,54 @@ async def on_link(m: Message):
     d.inputs += DRIVE.findall(m.text)
     d.save()
     await show_menu(m, d)
+
+
+INBOX_LIST: dict[int, list[str]] = {}  # chat id → files shown in its last «Папка сервера» list
+
+
+@router.callback_query(F.data == "inbox")
+async def cb_inbox(c: CallbackQuery):
+    d = draft(c.message.chat.id)
+    await c.answer()
+    if d.stage != "collect":
+        return await c.message.answer("Проект уже запущен. /new — новый проект.")
+    items = inbox.list_videos()
+    if not items:
+        return await c.message.answer(f"В папке сервера пока нет видео. Положите файлы в папку <b>inbox</b> "
+                                      f"({inbox.INBOX}) и нажмите «📁 Папка сервера» ещё раз.")
+    INBOX_LIST[c.message.chat.id] = [str(i["path"]) for i in items]
+    used = set(d.inputs)
+    kb = InlineKeyboardBuilder()
+    lines = []
+    for n, i in enumerate(items):
+        mark = "✅" if str(i["path"]) in used else ("⏳" if i["fresh"] else "➕")
+        lines.append(f"{mark} {html.escape(i['name'])} — {inbox.human_size(i['size'])}")
+        kb.button(text=f"{mark} {i['name'][:34]}", callback_data=f"ib:{n}")
+    kb.button(text="➕ Добавить все", callback_data="ib:all")
+    kb.button(text="↩️ К меню", callback_data="ib:menu")
+    kb.adjust(*([1] * len(items)), 2)
+    await c.message.answer("<b>Папка сервера</b> (новые сверху). ⏳ — файл ещё копируется.\n\n" + "\n".join(lines), reply_markup=kb.as_markup())
+
+
+@router.callback_query(F.data.startswith("ib:"))
+async def cb_inbox_pick(c: CallbackQuery):
+    d = draft(c.message.chat.id)
+    what = c.data[3:]
+    files = INBOX_LIST.get(c.message.chat.id, [])
+    if what == "menu":
+        await c.answer()
+        return await show_menu(c.message, d)
+    if d.stage != "collect":
+        return await c.answer("Проект уже запущен", show_alert=True)
+    picked = files if what == "all" else [files[int(what)]] if what.isdigit() and int(what) < len(files) else []
+    fresh = {str(i["path"]) for i in inbox.list_videos() if i["fresh"]}
+    added = [f for f in picked if f not in d.inputs and f not in fresh and Path(f).exists()]
+    d.inputs += added
+    d.save()
+    if picked and not added and any(f in fresh for f in picked):
+        return await c.answer("Файл ещё копируется — подождите 15 секунд и нажмите снова", show_alert=True)
+    await c.answer(f"Добавлено: {len(added)}" if added else "Уже добавлено")
+    await show_menu(c.message, d)
 
 
 @router.callback_query(F.data.startswith("tpl:"))
@@ -345,7 +396,8 @@ async def cb_render(c: CallbackQuery):
         path = r["master"] if r["master"].stat().st_size <= SEND_LIMIT else r["preview"]
         cap = f"<b>{r['id']}</b> — {r['angle']}\n\n{r['caption']}"[:1024]
         await c.message.answer_video(FSInputFile(path), caption=cap, supports_streaming=True, width=1080, height=1920)
-    await c.message.answer("Готово. Пришлите новые исходники — начнём следующий проект.")
+    where = next((l for l in reversed(d.status) if l.startswith("📁")), "")
+    await c.message.answer((where + "\n" if where else "") + "Готово. Новые видео — в папку inbox или сюда, начнём следующий проект.")
     new_draft(c.message.chat.id)
 
 

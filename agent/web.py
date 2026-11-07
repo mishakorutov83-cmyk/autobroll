@@ -170,7 +170,7 @@ async def remove_input(pid: str, idx: int):
     if st.stage != "collect" or not 0 <= idx < len(st.inputs):
         raise HTTPException(409, "нельзя")
     x = st.inputs.pop(idx)
-    if not x.startswith("http"):
+    if not x.startswith("http") and st.work.resolve() in Path(x).resolve().parents:  # never delete a file from the server's inbox
         Path(x).unlink(missing_ok=True)
     st.save()
     return _view(st)
