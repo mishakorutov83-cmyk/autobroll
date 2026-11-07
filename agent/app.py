@@ -21,6 +21,24 @@ from .web import app  # noqa: E402
 log = logging.getLogger("agent.app")
 
 
+async def bot_supervised():
+    """the bot may fail to reach Telegram (VPN off, Telegram blocked): retry with growing pauses — and never take the
+    web app down with it"""
+    from .bot import run_polling
+
+    delay = 5
+    while True:
+        try:
+            await run_polling()
+            return
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            log.error("Telegram bot stopped: %s: %s — retrying in %s s (the web app keeps running)", type(e).__name__, str(e)[:160], delay)
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 120)
+
+
 async def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     projects.recover_after_restart()
@@ -29,9 +47,7 @@ async def main():
                                            forwarded_allow_ips="*"))
     tasks = [server.serve()]
     if os.environ.get("BOT_TOKEN"):
-        from .bot import run_polling
-
-        tasks.append(run_polling())
+        tasks.append(bot_supervised())
     else:
         log.info("BOT_TOKEN is not set — Telegram bot is off, web app only")
     if not os.environ.get("WEB_PASSWORD"):

@@ -565,4 +565,15 @@ function viewError(p) {
   $('#retry').onclick = () => act(p.id, 'retry');
 }
 
-route();
+// opened from the Telegram bot's button: Telegram puts signed launch data into the URL hash — sign in with it
+async function tgBoot() {
+  const m = location.hash.match(/tgWebAppData=([^&]+)/);
+  if (!m) return;
+  const go = new URLSearchParams(location.search).get('go');
+  try {
+    await api('/api/tg-login', {method: 'POST', body: {initData: decodeURIComponent(m[1])}});
+  } catch (_) {} // not allowed / sign-in off: the normal login screen follows
+  history.replaceState(null, '', location.pathname + (go === 'inbox' ? '#/inbox' : '#/'));
+}
+
+tgBoot().then(route, route);

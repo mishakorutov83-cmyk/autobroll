@@ -16,7 +16,7 @@ Projects live on disk (agent/projects.py), so a restart does not lose a chat's p
 """
 from __future__ import annotations
 
-import asyncio, html, json, logging, os, re, shutil
+import asyncio, html, json, logging, os, re, shutil, time
 from pathlib import Path
 
 from aiogram import Bot, Dispatcher, F, Router
@@ -24,15 +24,16 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.telegram import TelegramAPIServer
 from aiogram.filters import Command, CommandStart
-from aiogram.types import CallbackQuery, FSInputFile, Message
+from aiogram.types import BotCommand, CallbackQuery, FSInputFile, KeyboardButton, Message, ReplyKeyboardMarkup, WebAppInfo
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from . import inbox, jobs, pricing, projects
 from .config import ROOT
+from .links import public_url
 from .projects import State, templates
 
 # .env saved by Windows Notepad can leave a stray \r or spaces around values
-for _k in ("BOT_TOKEN", "ANTHROPIC_API_KEY", "ALLOWED_USERS", "BOT_API_URL", "AGENT_MODEL", "AGENT_EFFORT"):
+for _k in ("BOT_TOKEN", "ANTHROPIC_API_KEY", "ALLOWED_USERS", "BOT_API_URL", "AGENT_MODEL", "AGENT_EFFORT", "PUBLIC_URL"):
     if _k in os.environ:
         os.environ[_k] = os.environ[_k].strip().strip('"').strip("'")
         if not os.environ[_k]:
@@ -110,17 +111,10 @@ def allowed(uid: int) -> bool:
 
 @router.message(CommandStart())
 @router.message(Command("help"))
-async def start(m: Message):
+async def start(m: Message):  # the panel of buttons comes with the help text
     if not allowed(m.from_user.id):
         return await m.answer(f"Нет доступа. Ваш id: {m.from_user.id} — передайте его владельцу бота.")
-    await m.answer("Я монтирую ролики по шаблону и делаю варианты с тем же смыслом.\n\n"
-                   "1. Исходники: положите видео в папку <b>inbox</b> на сервере и нажмите «📁 Папка сервера» "
-                   "(любой размер, быстрее всего) — или пришлите файл (до 20 МБ) / ссылку на Google Drive.\n"
-                   "2. Выберите шаблон и число вариантов. Можно написать задание своими словами — "
-                   "например «до 30 секунд, начни с цены, жёлтые субтитры» (или подписью к видео). → «Монтировать».\n"
-                   "3. Я пришлю план — подтвердите или напишите правки словами.\n"
-                   "4. Получите готовые ролики с текстом поста.\n\n"
-                   "/new — новый проект · /templates — шаблоны")
+    await cmd_menu(m)
     pid = _chats().get(str(m.chat.id))
     d = projects.load(pid) if pid else None
     if d and d.stage == "error" and jobs.analysed(d):  # e.g. stopped on an empty API balance
@@ -147,6 +141,136 @@ async def cmd_clearbrief(m: Message):
 @router.message(Command("templates"))
 async def cmd_templates(m: Message):
     await m.answer("\n\n".join(f"<b>{k}</b>\n{v}" for k, v in templates().items()))
+
+
+# ---------------------------------------------------------------- the button panel (always at the bottom of the chat)
+
+BTN_UPLOAD, BTN_INBOX, BTN_NEW, BTN_PROJECTS, BTN_HELP = "⬆️ Загрузить видео на сервер", "📁 Папка сервера", "🎬 Новый ролик", "📋 Мои проекты", "❓ Помощь"
+STAGE_RU = {"collect": "собираю видео", "analysing": "разбираю", "planning": "монтирую", "review": "план готов",
+            "rendering": "рендер", "done": "готово", "error": "ошибка"}
+
+
+async def panel() -> ReplyKeyboardMarkup:
+    """the upload button opens the web app inside Telegram (needs the app's HTTPS address); signed in automatically"""
+    url = await asyncio.to_thread(public_url)
+    # Telegram accepts only https addresses for a web-app button — with anything else it would refuse the whole message
+    up = KeyboardButton(text=BTN_UPLOAD, web_app=WebAppInfo(url=f"{url}/?go=inbox")) if url.startswith("https://") else KeyboardButton(text=BTN_UPLOAD)
+    return ReplyKeyboardMarkup(keyboard=[[up], [KeyboardButton(text=BTN_INBOX), KeyboardButton(text=BTN_NEW)],
+                                         [KeyboardButton(text=BTN_PROJECTS), KeyboardButton(text=BTN_HELP)]],
+                               resize_keyboard=True, is_persistent=True)
+
+
+HELP = ("Я монтирую ролики по шаблону и делаю варианты с тем же смыслом.\n\n"
+        f"1. Видео на сервер: кнопка «{BTN_UPLOAD}» (с телефона, любой размер) или положите файлы в папку <b>inbox</b> на сервере.\n"
+        f"2. «{BTN_NEW}» → «{BTN_INBOX}» → выберите видео. Выберите шаблон и число вариантов; можно написать задание своими словами — "
+        "например «до 30 секунд, начни с цены, жёлтые субтитры». → «Монтировать».\n"
+        "3. Я пришлю план — подтвердите или напишите правки словами.\n"
+        "4. Получите готовые ролики с текстом поста; полное качество лежит на сервере в out/ready.\n\n"
+        f"«{BTN_PROJECTS}» — вернуться к любому проекту.")
+
+
+@router.message(Command("menu"))
+@router.message(F.text == BTN_HELP)
+async def cmd_menu(m: Message):
+    if not allowed(m.from_user.id):
+        return await m.answer(f"Нет доступа. Ваш id: {m.from_user.id} — передайте его владельцу бота.")
+    kb = await panel()
+    await m.answer(HELP, reply_markup=kb)
+    if not any(b.web_app for row in kb.keyboard for b in row):
+        await m.answer("ℹ️ Кнопка «⬆️ Загрузить видео на сервер» заработает, когда у приложения будет адрес с HTTPS "
+                       "(туннель Cloudflare или PUBLIC_URL в .env). Пока кладите видео в папку inbox на сервере. "
+                       "После запуска туннеля отправьте /menu — кнопка обновится.")
+
+
+@router.message(F.text == BTN_UPLOAD)
+async def btn_upload(m: Message):  # only reached when the button has no web app address
+    if allowed(m.from_user.id):
+        await m.answer("Адреса приложения пока нет. Запустите туннель (docker compose --profile tunnel up -d) или задайте PUBLIC_URL "
+                       "в .env и отправьте /menu — кнопка станет открывать страницу загрузки. Пока положите видео в папку inbox на сервере.")
+
+
+@router.message(F.text == BTN_INBOX)
+async def btn_inbox(m: Message):
+    if allowed(m.from_user.id):
+        await show_inbox(m, draft(m.chat.id))
+
+
+@router.message(F.text == BTN_NEW)
+async def btn_new(m: Message):
+    if allowed(m.from_user.id):
+        await show_menu(m, new_draft(m.chat.id))
+
+
+@router.message(Command("projects"))
+@router.message(F.text == BTN_PROJECTS)
+async def btn_projects(m: Message):
+    if not allowed(m.from_user.id):
+        return
+    items = [x for x in projects.list_projects() if not (x.stage == "collect" and not x.inputs)][:6]  # skip empty drafts
+    if not items:
+        return await m.answer(f"Проектов пока нет. Нажмите «{BTN_NEW}».")
+    kb, lines = InlineKeyboardBuilder(), []
+    for st in items:
+        src = Path(st.inputs[0]).name if st.inputs and not st.inputs[0].startswith("http") else st.title
+        when = time.strftime("%d.%m %H:%M", time.localtime(st.created))
+        lines.append(f"{when} · {html.escape(src[:30])} — {STAGE_RU.get(st.stage, st.stage)}")
+        kb.button(text=f"{when} · {STAGE_RU.get(st.stage, st.stage)}", callback_data=f"op:{st.id}")
+    kb.adjust(1)
+    await m.answer("<b>Проекты</b> (новые сверху):\n" + "\n".join(lines), reply_markup=kb.as_markup())
+
+
+def set_current(chat: int, pid: str):
+    c = _chats()
+    c[str(chat)] = pid
+    CHATS.write_text(json.dumps(c))
+
+
+@router.callback_query(F.data.startswith("op:"))
+async def cb_open(c: CallbackQuery):
+    st = projects.load(c.data[3:])
+    await c.answer()
+    if not st:
+        return await c.message.answer("Проект не найден.")
+    set_current(c.message.chat.id, st.id)
+    m = c.message
+    if st.stage == "collect":
+        return await show_menu(m, st)
+    if st.stage == "review":
+        return await send_plan(m, st)
+    kb, has_button = InlineKeyboardBuilder(), st.stage in ("done", "error")
+    if st.stage == "done":
+        kb.button(text="📤 Прислать превью", callback_data=f"pv:{st.id}")
+        folder = next((l for l in reversed(st.status) if l.startswith("📁")), "")
+        text = f"✅ Готово: {len(projects.results(st))} роликов. {folder}\n{pricing.line(st.id)}"
+    elif st.stage == "error":
+        kb.button(text="↻ Повторить", callback_data=f"rt:{st.id}")
+        text = "❌ " + st.error
+    else:
+        last = " / ".join(st.status[-2:]) or STAGE_RU.get(st.stage, st.stage)
+        text = (last if last.startswith("⏳") else "⏳ " + last) + "\nПроект в работе — откройте его позже."
+    await m.answer(text.strip(), parse_mode=None, reply_markup=kb.as_markup() if has_button else None)
+
+
+@router.callback_query(F.data.startswith("pv:"))
+async def cb_previews(c: CallbackQuery):
+    st = projects.load(c.data[3:])
+    await c.answer()
+    if st:
+        await send_results(c.message, st, projects.results(st))
+
+
+@router.callback_query(F.data.startswith("rt:"))
+async def cb_retry(c: CallbackQuery):
+    st = projects.load(c.data[3:])
+    await c.answer()
+    if not st or st.stage != "error":
+        return await c.message.answer("Нечего повторять.")
+    await c.message.edit_reply_markup(reply_markup=None)
+    res = await follow(c.message, st, jobs.retry(st))
+    if st.stage == "review":
+        await send_plan(c.message, st)
+    elif st.stage == "done" and res:
+        await send_results(c.message, st, res)
 
 
 # ---------------------------------------------------------------- collecting sources
@@ -201,15 +325,18 @@ INBOX_LIST: dict[int, list[str]] = {}  # chat id → files shown in its last «�
 
 @router.callback_query(F.data == "inbox")
 async def cb_inbox(c: CallbackQuery):
-    d = draft(c.message.chat.id)
     await c.answer()
+    await show_inbox(c.message, draft(c.message.chat.id))
+
+
+async def show_inbox(m: Message, d: State):
     if d.stage != "collect":
-        return await c.message.answer("Проект уже запущен. /new — новый проект.")
+        d = new_draft(m.chat.id)  # the previous project is already running: pick videos for a new one
     items = inbox.list_videos()
     if not items:
-        return await c.message.answer(f"В папке сервера пока нет видео. Положите файлы в папку <b>inbox</b> "
-                                      f"({inbox.INBOX}) и нажмите «📁 Папка сервера» ещё раз.")
-    INBOX_LIST[c.message.chat.id] = [str(i["path"]) for i in items]
+        return await m.answer(f"В папке сервера пока нет видео. Загрузите их кнопкой «{BTN_UPLOAD}» или положите файлы в папку "
+                              f"<b>inbox</b> ({inbox.INBOX}) и нажмите «{BTN_INBOX}» ещё раз.")
+    INBOX_LIST[m.chat.id] = [str(i["path"]) for i in items]
     used = set(d.inputs)
     kb = InlineKeyboardBuilder()
     lines = []
@@ -220,7 +347,7 @@ async def cb_inbox(c: CallbackQuery):
     kb.button(text="➕ Добавить все", callback_data="ib:all")
     kb.button(text="↩️ К меню", callback_data="ib:menu")
     kb.adjust(*([1] * len(items)), 2)
-    await c.message.answer("<b>Папка сервера</b> (новые сверху). ⏳ — файл ещё копируется.\n\n" + "\n".join(lines), reply_markup=kb.as_markup())
+    await m.answer("<b>Папка сервера</b> (новые сверху). ⏳ — файл ещё копируется.\n\n" + "\n".join(lines), reply_markup=kb.as_markup())
 
 
 @router.callback_query(F.data.startswith("ib:"))
@@ -382,6 +509,16 @@ async def on_feedback(m: Message):
         await send_plan(m, d)
 
 
+async def send_results(m: Message, st: State, res: list[dict]):
+    """the videos into the chat (the full-quality masters stay on the server in out/ready)"""
+    for r in res[:12]:
+        path = r["master"] if r["master"].stat().st_size <= SEND_LIMIT else r["preview"]
+        cap = f"<b>{r['id']}</b> — {r['angle']}\n\n{r['caption']}"[:1024]
+        await m.answer_video(FSInputFile(path), caption=cap, supports_streaming=True, width=1080, height=1920)
+    if len(res) > 12:
+        await m.answer(f"Показаны первые 12 из {len(res)}. Остальные — на сервере, в папке out/ready.")
+
+
 @router.callback_query(F.data == "render")
 async def cb_render(c: CallbackQuery):
     d = draft(c.message.chat.id)
@@ -392,10 +529,7 @@ async def cb_render(c: CallbackQuery):
     res = await follow(c.message, d, jobs.render(d))
     if res is None:
         return await c.message.answer("Нажмите «🎬 Рендер» ещё раз, когда исправите причину.", reply_markup=review_kb())
-    for r in res:
-        path = r["master"] if r["master"].stat().st_size <= SEND_LIMIT else r["preview"]
-        cap = f"<b>{r['id']}</b> — {r['angle']}\n\n{r['caption']}"[:1024]
-        await c.message.answer_video(FSInputFile(path), caption=cap, supports_streaming=True, width=1080, height=1920)
+    await send_results(c.message, d, res)
     where = next((l for l in reversed(d.status) if l.startswith("📁")), "")
     await c.message.answer((where + "\n" if where else "") + "Готово. Новые видео — в папку inbox или сюда, начнём следующий проект.")
     new_draft(c.message.chat.id)
@@ -415,7 +549,15 @@ async def run_polling():
         log.warning("ALLOWED_USERS is empty — the bot answers anyone")
     dp = Dispatcher()
     dp.include_router(router)
-    await dp.start_polling(make_bot(), handle_signals=False)
+    bot = make_bot()
+    try:  # the «Menu» list next to the text field
+        await bot.set_my_commands([BotCommand(command="menu", description="Панель кнопок и помощь"),
+                                   BotCommand(command="new", description="Новый ролик"),
+                                   BotCommand(command="projects", description="Мои проекты"),
+                                   BotCommand(command="templates", description="Шаблоны")])
+    except Exception as e:
+        log.warning("set_my_commands failed: %s", e)
+    await dp.start_polling(bot, handle_signals=False)
 
 
 if __name__ == "__main__":  # bot only; agent.app runs the bot and the web app together

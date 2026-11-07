@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import inbox as inbox_mod, jobs, pricing, projects
+from . import inbox as inbox_mod, jobs, pricing, projects, tgauth
 from .config import INBOX, ROOT
 
 STATIC = Path(__file__).parent / "web"
@@ -46,7 +46,7 @@ TASKS: set[asyncio.Task] = set()
 @app.middleware("http")
 async def guard(req: Request, call_next):
     p = req.url.path
-    if (p.startswith("/api/") and p not in ("/api/login", "/api/me")) or p.startswith("/files/"):
+    if (p.startswith("/api/") and p not in ("/api/login", "/api/me", "/api/tg-login")) or p.startswith("/files/"):
         if not _authed(req):
             return JSONResponse({"error": "login"}, status_code=401)
     return await call_next(req)
@@ -102,11 +102,28 @@ async def login(req: Request):
     await asyncio.sleep(0.5)  # slows down guessing
     if not pw or not hmac.compare_digest(str(body.get("code", "")).strip(), pw):
         raise HTTPException(403, "неверный код" if pw else "WEB_PASSWORD не задан в .env на сервере")
+    return _session(req)
+
+
+def _session(req: Request) -> JSONResponse:
     resp = JSONResponse({"ok": True})
     exp = int(time.time()) + 90 * 86400
     resp.set_cookie(COOKIE, _token(exp), max_age=90 * 86400, httponly=True, samesite="lax",
                     secure=req.headers.get("x-forwarded-proto", req.url.scheme) == "https")
     return resp
+
+
+@app.post("/api/tg-login")
+async def tg_login(req: Request):
+    """opened from the Telegram bot's button: signed launch data instead of the access code"""
+    body = await req.json()
+    token, allowed = os.environ.get("BOT_TOKEN", ""), tgauth.allowed_ids()
+    if not token or not allowed:  # without a list of allowed users any Telegram user could get in
+        raise HTTPException(403, "вход через Telegram выключен: задайте BOT_TOKEN и ALLOWED_USERS")
+    uid = tgauth.verify(str(body.get("initData", "")), token)
+    if uid is None or uid not in allowed:
+        raise HTTPException(403, "Telegram не подтвердил вход")
+    return _session(req)
 
 
 @app.post("/api/logout")
