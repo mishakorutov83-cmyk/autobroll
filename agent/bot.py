@@ -27,7 +27,7 @@ from aiogram.filters import Command, CommandStart
 from aiogram.types import CallbackQuery, FSInputFile, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from . import jobs, projects
+from . import jobs, pricing, projects
 from .config import ROOT
 from .projects import State, templates
 
@@ -263,7 +263,10 @@ async def send_plan(msg: Message, d: State):
         rep = json.loads(chk.read_text())["checks"]
         text += "\n\nПроверка смысла:\n" + "\n".join(
             f"{'✅' if r['ok'] else '⚠️'} {r['plan_id']}" + "".join(f"\n   – {p}" for p in r["problems"]) for r in rep)
+    cost = pricing.line(d.id)
     chunks = [text[i:i + 3900] for i in range(0, len(text), 3900)]
+    if cost:
+        chunks.append(cost)
     for i, ch in enumerate(chunks):
         await msg.answer(ch, parse_mode=None, reply_markup=review_kb() if i == len(chunks) - 1 else None)
 

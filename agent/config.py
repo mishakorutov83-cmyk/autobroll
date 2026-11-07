@@ -6,9 +6,26 @@ ROOT = Path(__file__).resolve().parents[1]
 TEMPLATES = Path(__file__).parent / "templates"
 MODELS = Path(os.environ.get("REEL_MODELS", Path.home() / ".cache" / "autobroll"))
 
-# brain
-MODEL = os.environ.get("AGENT_MODEL", "claude-opus-5-5")
-EFFORT = os.environ.get("AGENT_EFFORT", "high")
+# brain: which Claude model and how much thinking each step gets. Output tokens (the model's reasoning and the
+# plans it writes) are most of the bill, so model and effort are the levers that matter.
+#   AGENT_PROFILE = quality | balanced (default) | economy
+#   or per step:  AGENT_MODEL / AGENT_EFFORT (main plan), AGENT_VARIANT_MODEL / AGENT_VARIANT_EFFORT, AGENT_CHECK_MODEL / AGENT_CHECK_EFFORT
+OPUS, SONNET, HAIKU = "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"
+PROFILES = {  # step → (model, effort)
+    "quality": {"main": (OPUS, "high"), "variants": (OPUS, "high"), "check": (OPUS, "medium")},
+    "balanced": {"main": (OPUS, "medium"), "variants": (SONNET, "medium"), "check": (SONNET, "low")},
+    "economy": {"main": (SONNET, "medium"), "variants": (HAIKU, "medium"), "check": (HAIKU, "low")},
+}
+
+
+def llm(step: str) -> tuple[str, str]:
+    """(model, effort) for a step: main | variants | check | revise (revise follows main)"""
+    profile = os.environ.get("AGENT_PROFILE", "balanced")
+    model, effort = PROFILES.get(profile, PROFILES["balanced"])["main" if step == "revise" else step]
+    if step in ("main", "revise"):
+        return os.environ.get("AGENT_MODEL") or model, os.environ.get("AGENT_EFFORT") or effort
+    key = {"variants": "VARIANT", "check": "CHECK"}[step]
+    return os.environ.get(f"AGENT_{key}_MODEL") or model, os.environ.get(f"AGENT_{key}_EFFORT") or effort
 
 # analysis
 # speech model: REEL_WHISPER (name or folder), else files dropped into models/whisper-large-v3-turbo/

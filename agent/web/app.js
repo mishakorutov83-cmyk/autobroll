@@ -365,6 +365,7 @@ function viewReview(p) {
     : '';
   app.innerHTML = `
     <div class="card"><h2>План готов</h2><p class="muted">Проверьте хук, порядок и текст. Если всё хорошо — «Рендер». Если нет — напишите правки словами.</p>
+      ${p.cost ? `<p class="muted" style="margin-top:-4px">${esc(p.cost)}</p>` : ''}
       ${p.brief ? `<div class="caption" style="margin-bottom:12px"><b>Задание:</b> ${esc(p.brief)}</div>` : ''}
       <button class="btn" id="render">🎬 Рендер (${p.variants + 1} роликов)</button></div>
     ${checks}
@@ -406,6 +407,7 @@ function viewDone(p) {
     .join('');
   app.innerHTML = `
     <div class="card"><h2>Готово: ${p.results.length} роликов</h2>
+      ${p.cost ? `<p class="muted">${esc(p.cost)}</p>` : ''}
       <p class="muted">«Сохранить» — откроется меню iPhone, там «Сохранить видео» (в Фото). «Оригинал» — полное качество 1080×1920.</p></div>
     ${vids || '<div class="empty">Роликов не найдено</div>'}
     <div class="card stack"><h2>Ещё правки?</h2>

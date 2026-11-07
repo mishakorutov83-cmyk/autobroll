@@ -8,7 +8,8 @@ import asyncio, logging, os
 import uvicorn
 
 # .env saved by Windows Notepad can leave a stray \r, spaces or quotes around values
-for _k in ("BOT_TOKEN", "ANTHROPIC_API_KEY", "ALLOWED_USERS", "BOT_API_URL", "AGENT_MODEL", "AGENT_EFFORT", "WEB_PASSWORD", "PORT", "HF_TOKEN", "HF_ENDPOINT", "REEL_WHISPER"):
+for _k in ("BOT_TOKEN", "ANTHROPIC_API_KEY", "ALLOWED_USERS", "BOT_API_URL", "AGENT_MODEL", "AGENT_EFFORT", "WEB_PASSWORD", "PORT", "HF_TOKEN", "HF_ENDPOINT", "REEL_WHISPER",
+           "AGENT_PROFILE", "AGENT_VARIANT_MODEL", "AGENT_VARIANT_EFFORT", "AGENT_CHECK_MODEL", "AGENT_CHECK_EFFORT"):
     if _k in os.environ:
         os.environ[_k] = os.environ[_k].strip().strip('"').strip("'")
         if not os.environ[_k]:

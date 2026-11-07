@@ -27,6 +27,8 @@ def api_hint(e: Exception) -> str:
         return "Неверный или пустой ANTHROPIC_API_KEY в .env."
     if "connection" in t or "forbidden" in t or "region" in t or "timed out" in t:
         return "Нет связи с Claude API — проверьте VPN («для всей системы»)."
+    if ("not_found" in t or "model" in t and "not" in t and "exist" in t) and "claude" in t:
+        return "Эта модель недоступна для вашего ключа. В .env поставьте AGENT_PROFILE=quality и перезапустите."
     if "huggingface" in t or "hf_hub" in t or "localentrynotfound" in t or "429" in t:
         return ("Не скачалась модель распознавания речи (Hugging Face ограничил загрузки). Нажмите «Повторить» через "
                 "несколько минут или впишите в .env бесплатный HF_TOKEN (huggingface.co → Settings → Tokens) и перезапустите.")

@@ -68,6 +68,31 @@ class EditPlan(Strict):
     notes: str = Field(description="for the human reviewer: the story logic and what was cut out and why")
 
 
+class VariantItem(Strict):
+    ref: str = Field(description="id of a clip of the MAIN plan to reuse exactly as it is (its captions and accents come with it); "
+                                 "empty string when this item is a new clip. Prefer ref: it keeps the answer short.")
+    shot: Literal["", "N", "M", "C", "push"] = Field(description="empty = keep the shot size of the reused clip; otherwise a new size for a visual difference")
+    clip: PlanClip | None = Field(description="only when ref is empty: a different cut of the source (other start/end, other caption); "
+                                              "its id must start with 'n' (n1, n2 …)")
+
+
+class VariantPlan(Strict):
+    id: str = Field(description="v1, v2 …")
+    angle: str = Field(description="one line: what makes this variant different (hook / order / length)")
+    speed: float = Field(description="playback speed of speech, pitch preserved (1.0-1.2)")
+    items: list[VariantItem] = Field(description="the cut, in order")
+    overlays: list[Overlay] = Field(description="clip_id is a main clip id (a ref) or the id of a new clip")
+    inserts: list[Insert]
+    style: Style
+    caption_text: str = Field(description="post caption for the social network, 1-3 sentences")
+    hashtags: list[str]
+    notes: str = Field(description="for the human reviewer: what differs from the main cut and why the meaning is unchanged")
+
+
+class VariantSet(Strict):
+    variants: list[VariantPlan]
+
+
 class PlanSet(Strict):
     plans: list[EditPlan] = Field(description="the main cut first (id 'main'), then the variants")
 

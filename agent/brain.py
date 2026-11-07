@@ -13,9 +13,10 @@ from pathlib import Path
 import anthropic
 import yaml
 
-from .config import EFFORT, MODEL, TEMPLATES, proj_dirs
+from . import pricing
+from .config import TEMPLATES, llm, proj_dirs
 from .ingest import describe
-from .plan import EditPlan, MeaningReport, PlanSet
+from .plan import EditPlan, MeaningReport, PlanSet, VariantPlan, VariantSet
 
 SYSTEM = """Ты — монтажёр коротких вертикальных роликов (Reels / Shorts / TikTok, 9:16).
 Тебе дают факты об исходниках (транскрипт с таймингом каждого слова, где в кадре лицо, контактные листы кадров
@@ -56,20 +57,43 @@ def _image(path: Path) -> dict:
                                         "data": base64.b64encode(path.read_bytes()).decode()}}
 
 
-def _call(messages: list, schema, max_tokens: int = 64000):
+FALLBACK_MODELS = ("claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5")
+
+
+def _call(messages: list, schema, step: str, proj: str, max_tokens: int = 64000):
+    """one Claude request for a pipeline step (main | variants | check | revise): its model and effort come from
+    config.llm(); the cost is written to the project's usage ledger. If a cheaper model rejects the request
+    (unknown model, unsupported parameter), the step is retried once on the main model instead of failing the video."""
+    model, effort = llm(step)
+    try:
+        return _request(messages, schema, step, proj, max_tokens, model, effort)
+    except anthropic.APIStatusError as e:
+        main_model, main_effort = llm("main")
+        if e.status_code in (400, 404) and step in ("variants", "check") and model != main_model \
+                and "credit balance" not in str(e).lower():
+            print(f"  {step}: {model} refused ({str(e)[:160]}) — retrying on {main_model}", flush=True)
+            return _request(messages, schema, step, proj, max_tokens, main_model, main_effort)
+        raise
+
+
+def _request(messages: list, schema, step: str, proj: str, max_tokens: int, model: str, effort: str):
+    extra = {}
+    if model.startswith(FALLBACK_MODELS):  # if a safety classifier declines, the API re-runs the request on a fallback model
+        extra = {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
     client = anthropic.Anthropic()
     with client.beta.messages.stream(
-        model=MODEL,
+        model=model,
         max_tokens=max_tokens,
         system=SYSTEM,
         messages=messages,
-        output_config={"effort": EFFORT},
+        output_config={"effort": effort},
         output_format=schema,
-        # if a safety classifier declines, the API re-runs the request on a fallback model
-        betas=["server-side-fallback-2026-07-01"],
-        fallbacks="default",
+        **extra,
     ) as stream:
         msg = stream.get_final_message()
+    usd = pricing.record(proj, step, msg.model or model, msg.usage)
+    u = msg.usage
+    print(f"  {step} {msg.model} ({effort}): in {u.input_tokens} + cache {getattr(u, 'cache_read_input_tokens', 0) or 0} / out {u.output_tokens} tokens ≈ ${usd:.3f}", flush=True)
     if msg.stop_reason == "refusal":
         raise RuntimeError(f"model refused: {msg.stop_details}")
     if msg.stop_reason == "max_tokens":
@@ -78,8 +102,6 @@ def _call(messages: list, schema, max_tokens: int = 64000):
     if parsed is None:
         text = next(b.text for b in msg.content if b.type == "text")
         parsed = schema.model_validate_json(text)
-    u = msg.usage
-    print(f"  {msg.model}: in {u.input_tokens} / out {u.output_tokens} tokens", flush=True)
     return parsed
 
 
@@ -90,22 +112,32 @@ def plan(proj: str, template: str, variants: int, feedback: str | None = None, b
         return ps
     work, _ = proj_dirs(proj)
     facts, images = describe(proj)
-    content = [{"type": "text", "text": f"# ШАБЛОН\n```yaml\n{load_template(template)}\n```"},
-               *([{"type": "text", "text": f"# ЗАДАНИЕ ЧЕЛОВЕКА (важнее шаблона, см. правило 8)\n{brief.strip()}"}] if brief.strip() else []),
-               {"type": "text", "text": f"# ИСХОДНИКИ\n{facts}"},
-               {"type": "text", "text": "Контактные листы кадров (подпись на каждом кадре: источник и секунда):"},
-               *[_image(p) for p in images],
-               {"type": "text", "text": f"Сделай основной монтаж (id main) и {min(variants, BATCH)} вариантов (v1..v{min(variants, BATCH)}). "
-                                        "Сначала найди в транскрипте лучшую историю под шаблон" + (" и задание" if brief.strip() else "") + ", потом режь."}]
-    messages = [{"role": "user", "content": content}]
+    shared = [{"type": "text", "text": f"# ШАБЛОН\n```yaml\n{load_template(template)}\n```"},
+              *([{"type": "text", "text": f"# ЗАДАНИЕ ЧЕЛОВЕКА (важнее шаблона, см. правило 8)\n{brief.strip()}"}] if brief.strip() else []),
+              {"type": "text", "text": f"# ИСХОДНИКИ\n{facts}"},
+              {"type": "text", "text": "Контактные листы кадров (подпись на каждом кадре: источник и секунда):"},
+              *[_image(p) for p in images]]
+    # everything above is identical in every request of this video (main cut, each batch of variants, a revision):
+    # the cache breakpoint makes the repeats read it at a fraction of the price
+    shared[-1] = {**shared[-1], "cache_control": {"type": "ephemeral"}}
     prev = work / "plans.json"
-    if feedback and prev.exists():
-        messages += [{"role": "assistant", "content": prev.read_text()},
-                     {"role": "user", "content": f"Правки от человека:\n{feedback}\n\nПерепиши планы с учётом правок. "
-                                                 "То, что правки не затрагивают, оставь как было."}]
-    ps = _call(messages, PlanSet)
-    if not feedback:
-        ps = _more(messages, ps, variants)
+
+    if feedback and prev.exists():  # a revision rewrites the whole set in the full format, following the human's notes
+        messages = [{"role": "user", "content": shared + [{"type": "text", "text": "Сделай монтаж по шаблону — он уже сделан, см. ниже."}]},
+                    {"role": "assistant", "content": PlanSet.model_validate_json(prev.read_text()).model_dump_json()},
+                    {"role": "user", "content": f"Правки от человека:\n{feedback}\n\nПерепиши планы с учётом правок. "
+                                                "То, что правки не затрагивают, оставь как было."}]
+        ps = _call(messages, PlanSet, "revise", proj)
+        save(proj, ps)
+        return ps
+
+    ask = ("Сделай ТОЛЬКО основной монтаж (id main). Варианты будут отдельным запросом. "
+           "Сначала найди в транскрипте лучшую историю под шаблон" + (" и задание" if brief.strip() else "") + ", потом режь.")
+    main = _call([{"role": "user", "content": shared + [{"type": "text", "text": ask}]}], EditPlan, "main", proj)
+    main.id = "main"
+    ps = PlanSet(plans=[main])
+    if variants:
+        ps = _variants(shared, ps, variants, proj)
     save(proj, ps)
     return ps
 
@@ -113,24 +145,58 @@ def plan(proj: str, template: str, variants: int, feedback: str | None = None, b
 BATCH = 8  # variants per request — keeps one answer well under the output limit
 
 
-def _more(messages: list, ps: PlanSet, variants: int) -> PlanSet:
-    """many variants: ask for the rest in batches, each batch told what already exists"""
-    plans = list(ps.plans)
+def _variants(shared: list, ps: PlanSet, variants: int, proj: str) -> PlanSet:
+    """variants are recipes over the main cut (reuse its clips by id, reorder, drop, add a few new ones), asked in
+    batches; each batch is told which angles exist. Only the new material is written out, so the answer stays short."""
+    main, plans = ps.plans[0], list(ps.plans)
+    main_json = main.model_dump_json()
     while len(plans) - 1 < variants:
         have = len(plans) - 1
         k = min(BATCH, variants - have)
-        known = "\n".join(f"- {p.id}: {p.angle}; первая фраза: «{p.clips[0].caption[:60] if p.clips else ''}»" for p in plans)
-        msg = messages[:1] + [{"role": "user", "content":
-            f"Уже сделаны планы:\n{known}\n\nСделай ещё {k} вариантов с id v{have + 1}..v{have + k}. Каждый должен "
-            "отличаться от всех уже сделанных: другая первая фраза или заголовок, другой порядок или длина. "
-            "Основной монтаж (main) не повторяй."}]
-        more = [p for p in _call(msg, PlanSet).plans if p.id != "main"][:k]
-        if not more:
+        known = "\n".join(f"- {p.id}: {p.angle}; начинается с: «{p.clips[0].caption[:60] if p.clips else ''}»" for p in plans)
+        ask = (f"Основной монтаж (main) уже сделан:\n{main_json}\n\nУже есть:\n{known}\n\n"
+               f"Сделай ещё {k} вариантов с id v{have + 1}..v{have + k} как РЕЦЕПТЫ: items — упорядоченный список; "
+               "{ref: id клипа из main} берёт клип как есть (так ответ короче — используй это везде, где можно), "
+               "новый клип (clip, id с 'n') — только если нужен другой отрезок исходника. "
+               "Каждый вариант должен отличаться для зрителя от main и от всех уже сделанных: другой хук (первый клип и/или заголовок), "
+               "другой порядок блоков, другая длина (убрать или добавить клипы), другая подача (shot, style). "
+               "Смысл не меняй: переставляй только независимые по смыслу блоки — не разрывай «вопрос → ответ», «причина → следствие», "
+               "«до → после»; не обрывай мысль.")
+        got = _call([{"role": "user", "content": shared + [{"type": "text", "text": ask}]}], VariantSet, "variants", proj).variants
+        made = [x for x in (_expand(main, v) for v in got) if x][:k]
+        if not made:
             break
-        for i, p in enumerate(more):  # ids must stay unique whatever the model returned
-            p.id = f"v{have + 1 + i}"
-        plans += more
+        for i, x in enumerate(made):  # ids must stay unique whatever the model returned
+            x.id = f"v{have + 1 + i}"
+        plans += made
     return PlanSet(plans=plans)
+
+
+def _expand(main: EditPlan, v: VariantPlan) -> EditPlan | None:
+    """recipe → a full plan: refs are copied from the main cut, new clips taken as written; broken refs are dropped"""
+    by_id = {c.id: c for c in main.clips}
+    clips, ids = [], set()
+    for it in v.items:
+        if it.ref:
+            c = by_id.get(it.ref)
+            if c is None or c.id in ids:  # unknown id or the same clip twice
+                continue
+            c = c.model_copy(deep=True)
+        elif it.clip is not None:
+            c = it.clip.model_copy(deep=True)
+            while c.id in ids or c.id in by_id:
+                c.id += "x"
+        else:
+            continue
+        if it.shot:
+            c.shot = it.shot
+        ids.add(c.id)
+        clips.append(c)
+    if not clips:
+        return None
+    keep = lambda xs, key: [x for x in xs if getattr(x, key) in ids]  # overlays / inserts of dropped clips go with them
+    return EditPlan(id=v.id, angle=v.angle, speed=v.speed, clips=clips, overlays=keep(v.overlays, "clip_id"),
+                    inserts=keep(v.inserts, "clip_id"), style=v.style, caption_text=v.caption_text, hashtags=v.hashtags, notes=v.notes)
 
 
 def check(proj: str, ps: PlanSet) -> MeaningReport:
@@ -143,7 +209,7 @@ def check(proj: str, ps: PlanSet) -> MeaningReport:
                                        "Проверь каждый план: совпадает ли смысл склеенных клипов, субтитров и надписей с тем, "
                                        "что человек сказал в исходнике? Ищи искажения: вырванные из контекста фразы, "
                                        "потерянные отрицания и условия, неверные цифры/имена, выдуманные факты в надписях."}]
-    return _call(msg, MeaningReport, max_tokens=32000)
+    return _call(msg, MeaningReport, "check", proj, max_tokens=32000)
 
 
 def save(proj: str, ps: PlanSet):

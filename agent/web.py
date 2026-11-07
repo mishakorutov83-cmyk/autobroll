@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import jobs, projects
+from . import jobs, pricing, projects
 from .config import ROOT
 
 STATIC = Path(__file__).parent / "web"
@@ -71,6 +71,7 @@ def _view(st: projects.State, full: bool = False) -> dict:
          "status": st.status[-12:], "error": st.error, "brief": st.brief, "failed": st.failed, "queued": jobs.queued(), "owner": st.owner}
     res = projects.results(st)
     v["results_count"] = len(res)
+    v["cost"] = pricing.line(st.id)
     if full:
         md = st.work / "plans.md"
         chk = st.work / "check.json"
