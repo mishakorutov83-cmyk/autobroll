@@ -177,9 +177,10 @@ async def cmd_menu(m: Message):
     kb = await panel()
     await m.answer(HELP, reply_markup=kb)
     if not any(b.web_app for row in kb.keyboard for b in row):
-        await m.answer("ℹ️ Кнопка «⬆️ Загрузить видео на сервер» заработает, когда у приложения будет адрес с HTTPS "
-                       "(туннель Cloudflare или PUBLIC_URL в .env). Пока кладите видео в папку inbox на сервере. "
-                       "После запуска туннеля отправьте /menu — кнопка обновится.")
+        await m.answer("ℹ️ Кнопка «⬆️ Загрузить видео на сервер» заработает, когда у приложения будет рабочий адрес с HTTPS: "
+                       "туннель Cloudflare должен быть подключён (docker compose logs tunnel — ищите «Registered tunnel connection»; "
+                       "не подключается — проверьте VPN «для всей системы») или задайте PUBLIC_URL в .env. "
+                       "Пока кладите видео в папку inbox на сервере. Когда адрес появится, отправьте /menu — кнопка обновится.")
 
 
 @router.message(F.text == BTN_UPLOAD)
