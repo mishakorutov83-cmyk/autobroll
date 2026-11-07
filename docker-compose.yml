@@ -25,7 +25,8 @@ services:
     image: cloudflare/cloudflared:latest
     profiles: [tunnel]
     restart: unless-stopped
-    command: tunnel --no-autoupdate --url http://agent:8080
+    # TCP (http2) instead of QUIC: UDP is blocked or dropped by many networks and VPNs, TCP to port 7844 usually passes
+    command: tunnel --no-autoupdate --protocol http2 --url http://agent:8080
     depends_on: [agent]
 
   caddy:                     # automatic HTTPS certificate for DOMAIN (point the domain's A record at the server)
