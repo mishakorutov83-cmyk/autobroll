@@ -34,6 +34,7 @@
 html, body { margin: 0; background: var(--bg); color: var(--text); }
 body {
   font: 16px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  min-height: 100vh;
   min-height: 100dvh;
   padding-bottom: env(safe-area-inset-bottom);
   overflow-x: hidden;
@@ -44,6 +45,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   position: sticky; top: 0; z-index: 5;
   display: flex; align-items: center; gap: 8px;
   padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+  background: var(--bg);
   background: color-mix(in srgb, var(--bg) 88%, transparent);
   -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--line);
@@ -106,7 +108,7 @@ textarea { min-height: 110px; resize: vertical; }
 .x { border: 0; background: none; color: var(--muted); font-size: 20px; cursor: pointer; padding: 0 4px; }
 
 .tpl { display: block; padding: 12px 14px; border: 1.5px solid var(--line); border-radius: 12px; margin-bottom: 8px; cursor: pointer; }
-.tpl.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.tpl.on { border-color: var(--accent); background: var(--soft); background: color-mix(in srgb, var(--accent) 9%, transparent); }
 .tpl b { display: block; }
 .tpl span { color: var(--muted); font-size: 14px; }
 .tpl input { display: none; }
@@ -128,7 +130,7 @@ textarea { min-height: 110px; resize: vertical; }
 .plan h3 { font-size: 16px; margin: 0 0 6px; white-space: normal; }
 .check { font-size: 14px; margin-top: 8px; }
 
-.video { width: 100%; aspect-ratio: 9 / 16; max-height: 70dvh; background: #000; border-radius: 12px; display: block; margin: 10px 0; object-fit: contain; }
+.video { width: 100%; aspect-ratio: 9 / 16; max-height: 70vh; max-height: 70dvh; background: #000; border-radius: 12px; display: block; margin: 10px 0; object-fit: contain; }
 .caption { background: var(--soft); border-radius: 12px; padding: 12px; font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .error { color: var(--bad); white-space: pre-wrap; overflow-wrap: anywhere; }

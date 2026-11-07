@@ -10,7 +10,7 @@ const SEL = {}; // pid → {template, variants, brief} chosen on the collect scr
 let pollTimer = null;
 let meta = {templates: [], max_variants: 30};
 
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const mb = (b) => (b / 1048576).toFixed(b > 104857600 ? 0 : 1) + ' МБ';
 
@@ -151,7 +151,8 @@ async function viewProject(pid) {
   const p = await api(`/api/projects/${pid}`);
   header(p.title, '#/');
   if (BUSY.includes(p.stage)) return viewBusy(p);
-  ({collect: viewCollect, review: viewReview, done: viewDone, error: viewError})[p.stage]?.(p);
+  const show = {collect: viewCollect, review: viewReview, done: viewDone, error: viewError}[p.stage];
+  if (show) show(p);
   if ((UP[p.id] || []).some((f) => !f.done)) return;
   const del = document.createElement('button');
   del.className = 'link-btn';
@@ -170,7 +171,7 @@ async function viewProject(pid) {
 }
 
 function viewCollect(p) {
-  const sel = (SEL[p.id] ||= {template: p.template, variants: p.variants, brief: p.brief || ''});
+  const sel = SEL[p.id] || (SEL[p.id] = {template: p.template, variants: p.variants, brief: p.brief || ''});
   const ups = (UP[p.id] || []).filter((f) => !f.done);
   const files = p.inputs
     .map((n, i) => `<div class="file"><div class="row"><span class="fname">✅ ${esc(n)}</span><button class="x" data-del="${i}" aria-label="Убрать">✕</button></div></div>`)
@@ -285,8 +286,9 @@ async function startUploads(pid, files) {
   const items = files.map((f) => ({file: f, name: f.name, size: f.size, sent: 0, note: 'в очереди', done: false}));
   list.push(...items);
   route();
-  if (startUploads.running?.[pid]) return;
-  (startUploads.running ||= {})[pid] = true;
+  startUploads.running = startUploads.running || {};
+  if (startUploads.running[pid]) return;
+  startUploads.running[pid] = true;
   const release = await keepAwake();
   try {
     for (const it of list) if (!it.done) await uploadOne(`/api/projects/${pid}`, it, () => paint(pid, it));
