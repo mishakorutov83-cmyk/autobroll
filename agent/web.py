@@ -13,8 +13,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import jobs, pricing, projects
-from .config import ROOT
+from . import inbox as inbox_mod, jobs, pricing, projects
+from .config import INBOX, ROOT
 
 STATIC = Path(__file__).parent / "web"
 COOKIE = "agent_auth"
@@ -230,49 +230,48 @@ async def retry(pid: str):
 
 
 # ---------------------------------------------------------------- resumable uploads
+# One mechanism, two targets: a project's own folder, or the shared server inbox (what the bot lists).
 
-def _upload_paths(st: projects.State, uid: str) -> tuple[Path, Path]:
+def _upload_paths(folder: Path, uid: str) -> tuple[Path, Path]:
     if not re.fullmatch(r"[0-9a-f]{16}", uid):
         raise HTTPException(404, "нет такой загрузки")
-    d = st.work / "uploads"
-    return d / f"{uid}.part", d / f"{uid}.json"
+    return folder / f"{uid}.part", folder / f"{uid}.json"
 
 
-@app.post("/api/projects/{pid}/uploads")
-async def upload_create(pid: str, req: Request):
-    st = _proj(pid)
-    if st.stage != "collect":
-        raise HTTPException(409, "проект уже запущен")
+async def _upload_create(folder: Path, req: Request, videos_only: bool = False) -> dict:
     body = await req.json()
-    name = Path(str(body.get("name", "video.mp4"))).name[:120]
+    name = Path(str(body.get("name", "video.mp4"))).name[:120] or "video.mp4"
     size = int(body.get("size", 0))
     if size <= 0:
         raise HTTPException(400, "пустой файл")
+    if videos_only and (Path(name).suffix.lower() or ".mp4") not in inbox_mod.VIDEO_EXT | {""}:
+        raise HTTPException(400, "это не видео")
     uid = secrets.token_hex(8)
-    part, meta = _upload_paths(st, uid)
+    part, meta = _upload_paths(folder, uid)
     part.parent.mkdir(parents=True, exist_ok=True)
+    for old in part.parent.iterdir():  # forget abandoned uploads after a week
+        if time.time() - old.stat().st_mtime > 7 * 86400:
+            old.unlink(missing_ok=True)
     part.touch()
     meta.write_text(json.dumps({"name": name, "size": size}))
     return {"uid": uid, "received": 0, "size": size}
 
 
-@app.get("/api/projects/{pid}/uploads/{uid}")
-async def upload_status(pid: str, uid: str):
-    st = _proj(pid)
-    part, meta = _upload_paths(st, uid)
+def _upload_status(folder: Path, uid: str) -> dict:
+    part, meta = _upload_paths(folder, uid)
     if not meta.exists():
         raise HTTPException(404, "нет такой загрузки")
     m = json.loads(meta.read_text())
     return {"uid": uid, "received": part.stat().st_size if part.exists() else m["size"], "size": m["size"], "done": not part.exists()}
 
 
-@app.put("/api/projects/{pid}/uploads/{uid}")
-async def upload_chunk(pid: str, uid: str, offset: int, req: Request):
-    st = _proj(pid)
-    part, meta = _upload_paths(st, uid)
-    if not meta.exists() or not part.exists():
+async def _upload_chunk(folder: Path, uid: str, offset: int, req: Request, finish):
+    part, meta = _upload_paths(folder, uid)
+    if not meta.exists():
         raise HTTPException(404, "нет такой загрузки")
     m = json.loads(meta.read_text())
+    if not part.exists():  # finished earlier and only the reply was lost: answer «done» again, do not start over
+        return {"received": m["size"], "size": m["size"], "done": True}
     have = part.stat().st_size
     if offset != have:  # client is out of sync (a chunk was lost / sent twice) — tell it where to continue
         return JSONResponse({"received": have, "size": m["size"]}, status_code=409)
@@ -285,16 +284,98 @@ async def upload_chunk(pid: str, uid: str, offset: int, req: Request):
     have = part.stat().st_size
     done = have == m["size"]
     if done:
-        inbox = st.work / "inbox"
-        inbox.mkdir(exist_ok=True)
+        finish(part, uid, m)
+    return {"received": have, "size": m["size"], "done": done}
+
+
+def _project_uploads(st: projects.State) -> Path:
+    return st.work / "uploads"
+
+
+def _finish_project(st: projects.State):
+    def finish(part: Path, uid: str, m: dict):
+        box = st.work / "inbox"
+        box.mkdir(exist_ok=True)
         ext = Path(m["name"]).suffix.lower() or ".mp4"
-        dst = inbox / f"src{len(st.inputs)}_{uid[:4]}{ext}"
+        dst = box / f"src{len(st.inputs)}_{uid[:4]}{ext}"
         part.replace(dst)
         st.inputs.append(str(dst))
         if st.title.startswith("Ролик ") and len(st.inputs) == 1:
             st.title = Path(m["name"]).stem[:60] or st.title
         st.save()
-    return {"received": have, "size": m["size"], "done": done}
+    return finish
+
+
+@app.post("/api/projects/{pid}/uploads")
+async def upload_create(pid: str, req: Request):
+    st = _proj(pid)
+    if st.stage != "collect":
+        raise HTTPException(409, "проект уже запущен")
+    return await _upload_create(_project_uploads(st), req)
+
+
+@app.get("/api/projects/{pid}/uploads/{uid}")
+async def upload_status(pid: str, uid: str):
+    return _upload_status(_project_uploads(_proj(pid)), uid)
+
+
+@app.put("/api/projects/{pid}/uploads/{uid}")
+async def upload_chunk(pid: str, uid: str, offset: int, req: Request):
+    st = _proj(pid)
+    return await _upload_chunk(_project_uploads(st), uid, offset, req, _finish_project(st))
+
+
+# ---- the shared server inbox: iPhone → server, listed by the Telegram bot («📁 Папка сервера»)
+
+INBOX_TMP = INBOX / ".uploads"
+
+
+def _finish_inbox(part: Path, uid: str, m: dict):
+    name = Path(m["name"]).name
+    stem, ext = Path(name).stem or "video", (Path(name).suffix.lower() or ".mp4")
+    dst, n = INBOX / f"{stem}{ext}", 1
+    while dst.exists():  # IMG_0042.MOV from two phones, or the same file sent twice — never overwrite
+        dst, n = INBOX / f"{stem}_{n}{ext}", n + 1
+    part.replace(dst)
+    # the file arrived whole (renamed into place): don't show it as «still being copied» (that flag is for other tools)
+    t = time.time() - 30
+    os.utime(dst, (t, t))
+
+
+@app.get("/api/inbox")
+async def inbox_list():
+    return {"files": [{"name": v["name"], "size": v["size"], "mtime": v["mtime"], "fresh": v["fresh"]} for v in inbox_mod.list_videos(60)],
+            "folder": str(INBOX)}
+
+
+@app.post("/api/inbox/uploads")
+async def inbox_upload_create(req: Request):
+    return await _upload_create(INBOX_TMP, req, videos_only=True)
+
+
+@app.get("/api/inbox/uploads/{uid}")
+async def inbox_upload_status(uid: str):
+    return _upload_status(INBOX_TMP, uid)
+
+
+@app.put("/api/inbox/uploads/{uid}")
+async def inbox_upload_chunk(uid: str, offset: int, req: Request):
+    return await _upload_chunk(INBOX_TMP, uid, offset, req, _finish_inbox)
+
+
+@app.post("/api/projects/{pid}/inbox")
+async def add_from_inbox(pid: str, req: Request):
+    st = _proj(pid)
+    if st.stage != "collect":
+        raise HTTPException(409, "проект уже запущен")
+    name = Path(str((await req.json()).get("name", ""))).name
+    path = INBOX / name
+    if not name or not path.is_file() or path.suffix.lower() not in inbox_mod.VIDEO_EXT:
+        raise HTTPException(404, "нет такого файла в папке сервера")
+    if str(path) not in st.inputs:
+        st.inputs.append(str(path))
+        st.save()
+    return _view(st)
 
 
 # ---------------------------------------------------------------- results

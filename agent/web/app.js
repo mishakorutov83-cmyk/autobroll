@@ -5,6 +5,7 @@ const $ = (s, el = document) => el.querySelector(s);
 const app = $('#app');
 const CHUNK = 8 * 1024 * 1024; // Safari on iPhone drops long requests — small resumable chunks
 const UP = {}; // pid → [{name, size, sent, note, done}]
+const UPI = []; // uploads into the shared server inbox (not tied to a project)
 const SEL = {}; // pid → {template, variants, brief} chosen on the collect screen, kept across re-renders
 let pollTimer = null;
 let meta = {templates: [], max_variants: 30};
@@ -33,7 +34,7 @@ async function api(path, {method = 'GET', body} = {}) {
     throw new Error('Нужно войти');
   }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.detail || data.error || `Ошибка ${res.status}`);
+  if (!res.ok) throw Object.assign(new Error(data.detail || data.error || `Ошибка ${res.status}`), {status: res.status});
   return data;
 }
 
@@ -53,7 +54,7 @@ const STAGE = {
   error: ['Ошибка', 'bad'],
 };
 const BUSY = ['analysing', 'planning', 'rendering'];
-const uploading = () => Object.values(UP).some((l) => l.some((f) => !f.done));
+const uploading = () => Object.values(UP).some((l) => l.some((f) => !f.done)) || UPI.some((f) => !f.done);
 
 window.addEventListener('beforeunload', (e) => {
   if (uploading()) {
@@ -73,6 +74,7 @@ async function route() {
     if (!me.authed) return viewLogin(me.configured);
     $('#logout').hidden = false;
     if (!meta.templates.length) meta = await api('/api/templates');
+    if (h === '#/inbox') return viewInbox();
     const m = h.match(/^#\/p\/([\w-]+)/);
     if (m) return viewProject(m[1]);
     return viewList();
@@ -133,6 +135,7 @@ async function viewList() {
     .join('');
   app.innerHTML = `
     <button class="btn" id="new">＋ Новый ролик</button>
+    <a class="btn secondary" href="#/inbox" style="margin-top:10px">⬆️ Загрузить видео на сервер</a>
     <div style="height:14px"></div>
     ${items || '<div class="empty">Пока нет проектов.<br>Нажмите «Новый ролик» и загрузите видео.</div>'}`;
   $('#new').onclick = async () => {
@@ -185,6 +188,7 @@ function viewCollect(p) {
       <label class="drop"><input type="file" id="pick" accept="video/*" multiple>
         <strong>＋ Выбрать видео</strong><span class="muted">Из «Фото» или «Файлов». Любой размер — загрузка продолжится, если пропадёт связь.</span></label>
       <div id="files">${files}${pending}</div>
+      <details id="inboxd" style="margin-top:12px"><summary class="muted">или из папки сервера (уже загруженные)</summary><div id="inboxlist" class="muted" style="margin-top:8px">Загружаю список…</div></details>
       <details style="margin-top:12px"><summary class="muted">или ссылка на Google Drive</summary>
         <div class="row" style="margin-top:8px"><input type="url" id="link" placeholder="https://drive.google.com/…"><button class="btn small secondary" id="addlink">Добавить</button></div>
       </details>
@@ -228,6 +232,26 @@ function viewCollect(p) {
     e.target.value = '';
     if (list.length) startUploads(p.id, list);
   };
+  $('#inboxd').ontoggle = async (e) => {
+    if (!e.target.open) return;
+    const box = $('#inboxlist');
+    try {
+      const {files} = await api('/api/inbox');
+      box.innerHTML = files.length
+        ? files.map((f) => `<div class="file"><div class="row"><span class="fname">${esc(f.name)}</span><button class="btn small secondary" data-inb="${esc(f.name)}" ${f.fresh || p.inputs.some((x) => x === f.name || x.endsWith('/' + f.name)) ? 'disabled' : ''}>${f.fresh ? '⏳' : 'Добавить'}</button></div><div class="muted">${mb(f.size)}</div></div>`).join('')
+        : 'В папке сервера пока ничего нет — загрузите видео кнопкой «Загрузить видео на сервер» на главном экране.';
+      box.querySelectorAll('[data-inb]').forEach((b) => (b.onclick = async () => {
+        try {
+          await api(`/api/projects/${p.id}/inbox`, {method: 'POST', body: {name: b.dataset.inb}});
+          route();
+        } catch (err) {
+          toast(err.message);
+        }
+      }));
+    } catch (err) {
+      box.textContent = err.message;
+    }
+  };
   $('#addlink').onclick = async () => {
     try {
       await api(`/api/projects/${p.id}/links`, {method: 'POST', body: {url: $('#link').value.trim()}});
@@ -263,10 +287,12 @@ async function startUploads(pid, files) {
   route();
   if (startUploads.running?.[pid]) return;
   (startUploads.running ||= {})[pid] = true;
+  const release = await keepAwake();
   try {
-    for (const it of list) if (!it.done) await uploadOne(pid, it);
+    for (const it of list) if (!it.done) await uploadOne(`/api/projects/${pid}`, it, () => paint(pid, it));
   } finally {
     startUploads.running[pid] = false;
+    release();
   }
   if (location.hash === `#/p/${pid}`) route();
   toast('Видео загружено');
@@ -283,14 +309,25 @@ function paint(pid, it) {
   $('[data-note]', el).textContent = it.note;
 }
 
-async function uploadOne(pid, it) {
+// keep the screen on while uploading: iOS pauses a page whose screen locked (the upload resumes, but later)
+async function keepAwake() {
+  try {
+    if ('wakeLock' in navigator) {
+      const lock = await navigator.wakeLock.request('screen');
+      return () => lock.release().catch(() => {});
+    }
+  } catch (_) {}
+  return () => {};
+}
+
+async function uploadOne(base, it, onProgress) {
   let fails = 0;
   it.note = 'загружаю…';
-  paint(pid, it);
+  onProgress();
   for (;;) {
     try {
-      if (!it.uid) it.uid = (await api(`/api/projects/${pid}/uploads`, {method: 'POST', body: {name: it.name, size: it.size}})).uid;
-      const url = `/api/projects/${pid}/uploads/${it.uid}`;
+      if (!it.uid) it.uid = (await api(`${base}/uploads`, {method: 'POST', body: {name: it.name, size: it.size}})).uid;
+      const url = `${base}/uploads/${it.uid}`;
       while (it.sent < it.size) {
         const t0 = performance.now();
         const res = await fetch(`${url}?offset=${it.sent}`, {method: 'PUT', body: it.file.slice(it.sent, it.sent + CHUNK), credentials: 'same-origin'});
@@ -300,34 +337,100 @@ async function uploadOne(pid, it) {
           it.sent = j.received;
           continue;
         }
-        if (!res.ok) throw new Error(j.detail || `Ошибка ${res.status}`);
+        if (!res.ok) throw Object.assign(new Error(j.detail || `Ошибка ${res.status}`), {status: res.status});
         const speed = (j.received - it.sent) / ((performance.now() - t0) / 1000);
         it.sent = j.received;
         const left = (it.size - it.sent) / Math.max(speed, 1);
         it.note = `${mb(it.sent)} из ${mb(it.size)} · ${left > 90 ? Math.round(left / 60) + ' мин' : Math.round(left) + ' с'}`;
         fails = 0;
-        paint(pid, it);
+        onProgress();
         if (j.done) break;
       }
       it.done = true;
       return;
     } catch (err) {
-      if (/войти/.test(err.message)) {
-        it.note = err.message;
-        paint(pid, it);
+      if (err.status === 404 && it.uid) {  // the server forgot this upload (restart, cleanup): start it again
+        it.uid = null;
+        it.sent = 0;
+      } else if (/войти/.test(err.message) || (err.status >= 400 && err.status < 500 && ![408, 409, 429].includes(err.status))) {
+        it.note = err.message;  // the server said no (not a video, project already started …): retrying will not help
+        onProgress();
         throw err;
       }
       fails++;
       it.note = `Связь прервалась — продолжу через ${Math.min(30, 2 * fails)} с…`;
-      paint(pid, it);
+      onProgress();
       await sleep(Math.min(30000, 2000 * fails));
       if (it.uid) {
         try {
-          it.sent = (await api(`/api/projects/${pid}/uploads/${it.uid}`)).received;
+          it.sent = (await api(`${base}/uploads/${it.uid}`)).received;
         } catch (_) {}
       }
     }
   }
+}
+
+// ---------------------------------------------------------------- upload to the server inbox
+
+async function viewInbox() {
+  header('Загрузка на сервер', '#/');
+  const {files, folder} = await api('/api/inbox');
+  const pending = UPI.filter((f) => !f.done);
+  app.innerHTML = `
+    <div class="card">
+      <h2>Видео с телефона → сервер</h2>
+      <label class="drop"><input type="file" id="pickinbox" accept="video/*" multiple>
+        <strong>＋ Выбрать видео</strong><span class="muted">Из «Фото» или «Файлов». Любой размер; если связь пропадёт — загрузка продолжится. Не закрывайте приложение, пока идёт загрузка.</span></label>
+      <div id="upi">${pending.map((f, i) => `<div class="file" id="upi-${i}"><div class="row"><span class="fname">${esc(f.name)}</span><span class="muted" data-pct>${Math.floor((100 * f.sent) / f.size)}%</span></div>
+        <div class="progress"><i style="width:${(100 * f.sent) / f.size}%"></i></div><div class="muted" data-note>${esc(f.note || mb(f.size))}</div></div>`).join('')}</div>
+    </div>
+    <div class="card">
+      <h2>В папке сервера</h2>
+      ${files.length ? files.map((f) => `<div class="file"><div class="row"><span class="fname">${f.fresh ? '⏳ ' : ''}${esc(f.name)}</span><span class="muted">${mb(f.size)}</span></div></div>`).join('') : '<div class="muted">Пока пусто.</div>'}
+      <p class="muted" style="margin-bottom:0">В Telegram-боте: меню проекта → «📁 Папка сервера». Здесь же: «Новый ролик» → «из папки сервера».</p>
+    </div>`;
+  $('#pickinbox').onchange = (e) => {
+    const list = [...e.target.files];
+    e.target.value = '';
+    if (list.length) startInboxUploads(list);
+  };
+}
+
+function paintInbox(it) {
+  if (location.hash !== '#/inbox') return;
+  const el = document.getElementById(`upi-${UPI.filter((f) => !f.done).indexOf(it)}`);
+  if (!el) return;
+  const pct = Math.floor((100 * it.sent) / it.size);
+  $('[data-pct]', el).textContent = pct + '%';
+  $('i', el).style.width = pct + '%';
+  $('[data-note]', el).textContent = it.note;
+}
+
+async function startInboxUploads(files) {
+  for (let i = UPI.length - 1; i >= 0; i--) if (UPI[i].done) UPI.splice(i, 1);
+  UPI.push(...files.map((f) => ({file: f, name: f.name, size: f.size, sent: 0, note: 'в очереди', done: false})));
+  route();
+  if (startInboxUploads.running) return;
+  startInboxUploads.running = true;
+  const release = await keepAwake();
+  let ok = 0;
+  try {
+    for (const it of UPI) {
+      if (it.done) continue;
+      try {
+        await uploadOne('/api/inbox', it, () => paintInbox(it));
+        ok++;
+      } catch (err) {
+        it.done = true; // a failed file must not block the rest
+        toast(`${it.name}: ${err.message}`);
+      }
+    }
+  } finally {
+    startInboxUploads.running = false;
+    release();
+  }
+  if (location.hash === '#/inbox') route();
+  if (ok) toast(ok > 1 ? `Загружено: ${ok}` : 'Видео загружено на сервер');
 }
 
 function viewBusy(p) {
