@@ -545,11 +545,15 @@ def make_bot() -> Bot:
     return Bot(os.environ["BOT_TOKEN"], session=session, default=DefaultBotProperties(parse_mode="HTML"))
 
 
+# one dispatcher for the whole process: a router can be attached only once, so a restart after a network failure
+# (agent.app retries) must reuse it instead of building a new one
+DISPATCHER = Dispatcher()
+DISPATCHER.include_router(router)
+
+
 async def run_polling():
     if not ALLOWED:
         log.warning("ALLOWED_USERS is empty — the bot answers anyone")
-    dp = Dispatcher()
-    dp.include_router(router)
     bot = make_bot()
     try:  # the «Menu» list next to the text field
         await bot.set_my_commands([BotCommand(command="menu", description="Панель кнопок и помощь"),
@@ -558,7 +562,7 @@ async def run_polling():
                                    BotCommand(command="templates", description="Шаблоны")])
     except Exception as e:
         log.warning("set_my_commands failed: %s", e)
-    await dp.start_polling(bot, handle_signals=False)
+    await DISPATCHER.start_polling(bot, handle_signals=False)
 
 
 if __name__ == "__main__":  # bot only; agent.app runs the bot and the web app together
