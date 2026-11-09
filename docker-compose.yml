@@ -10,6 +10,7 @@ services:
     build: {context: ., dockerfile: Dockerfile.agent}
     restart: unless-stopped
     env_file: .env
+    shm_size: 1gb            # headless Chrome (rendering) crashes with Docker's default 64 MB /dev/shm
     ports:
       - "8080:8080"
     volumes:

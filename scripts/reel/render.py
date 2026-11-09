@@ -19,6 +19,26 @@ ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "out"
 
 
+def render_concurrency() -> int:
+    """Remotion opens one headless Chrome tab per worker: too many for the memory = the render gets killed.
+    REEL_CONCURRENCY overrides; otherwise min(CPU cores, ~1 worker per 1.5 GB of available memory)."""
+    env = os.environ.get("REEL_CONCURRENCY")
+    if env and env.isdigit() and int(env) > 0:
+        return int(env)
+    cores = os.cpu_count() or 4
+    try:
+        mem = {k: int(v.split()[0]) for k, v in (l.split(":", 1) for l in open("/proc/meminfo"))}
+        gb = mem.get("MemAvailable", mem.get("MemTotal", 8 * 2**20)) / 2**20
+        try:  # a container memory limit is lower than the host's
+            lim = open("/sys/fs/cgroup/memory.max").read().strip()
+            gb = min(gb, int(lim) / 2**30) if lim.isdigit() else gb
+        except OSError:
+            pass
+        return max(1, min(cores, int(gb / 1.5)))
+    except Exception:
+        return min(cores, 4)
+
+
 def run(cmd, **kw):
     return subprocess.run(cmd, check=True, cwd=ROOT, **kw)
 
@@ -30,7 +50,7 @@ def main():
     args = ap.parse_args()
     props = ROOT / "public" / f"{args.ep}.props.json"
     OUT.mkdir(exist_ok=True)
-    cpus = str(os.cpu_count() or 4)
+    cpus = str(render_concurrency())
 
     if args.stills:
         run(["node", "scripts/reel/stills.mjs", args.ep, args.stills])
