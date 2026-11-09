@@ -11,7 +11,7 @@ from .config import ROOT, proj_dirs
 
 def run_logged(cmd: list[str], what: str):
     """run a step, keep its output in the container log AND in the error: «returned exit status 1» alone says nothing"""
-    tail = collections.deque(maxlen=25)
+    tail = collections.deque(maxlen=200)
     proc = subprocess.Popen(cmd, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
     for line in proc.stdout:
         print(line, end="", flush=True)
@@ -24,7 +24,14 @@ def run_logged(cmd: list[str], what: str):
         if code in (137, -9) or re.search(r"\bkilled\b|out of memory|\boom\b|oom-kill|target closed|browser crashed|page crashed", text):
             hint = ("\n\nПохоже, не хватило памяти: Docker Desktop (WSL2) отдаёт контейнеру мало RAM. "
                     "Закройте тяжёлые программы или увеличьте память WSL (файл .wslconfig, параметр memory=) и повторите.")
-        raise RuntimeError(f"{what} завершился с ошибкой (код {code}). Последние строки:\n" + "\n".join(list(tail)[-12:]) + hint)
+        lines = list(tail)
+        # the child script ends with its own Python traceback, which would push out what actually failed (Remotion's or
+        # ffmpeg's message): show the lines BEFORE the first traceback, then the final error line
+        cut = next((i for i, l in enumerate(lines) if l.startswith("Traceback (most recent call last)")), len(lines))
+        core = [l for l in lines[:cut] if not l.startswith("agent-1")][-14:]
+        last = lines[-1] if lines else ""
+        shown = core + ([last] if last and last not in core else [])
+        raise RuntimeError(f"{what} завершился с ошибкой (код {code}). Что сообщил инструмент:\n" + "\n".join(shown or ["(вывода нет)"]) + hint)
 
 
 def render(proj: str, only: set[str] | None = None, stills: str | None = None) -> list[dict]:

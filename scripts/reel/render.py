@@ -69,7 +69,9 @@ def main():
     ln = (f"{P.LOUDNESS}:measured_I={m['input_i']}:measured_TP={m['input_tp']}:measured_LRA={m['input_lra']}"
           f":measured_thresh={m['input_thresh']}:offset={m['target_offset']}:linear=true")
     master = OUT / f"{args.ep}_master.mp4"
-    run(["ffmpeg", "-y", "-v", "error", "-i", str(raw), "-af", ln + ",aresample=48000", "-c:v", "copy",
+    # the output rate is an OUTPUT option (-ar): loudnorm emits 192 kHz, and an «aresample» right after it inside the
+    # same filter makes ffmpeg 5.1 (Debian — the Docker image) fail with «Error reinitializing filters»
+    run(["ffmpeg", "-y", "-v", "error", "-i", str(raw), "-af", ln, "-ar", "48000", "-c:v", "copy",
          "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(master)])
     raw.unlink()
 
