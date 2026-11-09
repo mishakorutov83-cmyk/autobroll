@@ -12,7 +12,7 @@ services:
     env_file: .env
     shm_size: 1gb            # headless Chrome (rendering) crashes with Docker's default 64 MB /dev/shm
     ports:
-      - "8080:8080"
+      - "${AGENT_BIND:-0.0.0.0}:8080:8080"   # on a server AGENT_BIND=127.0.0.1: only Caddy (HTTPS) reaches the app; Docker would otherwise publish 8080 past the firewall
     volumes:
       - tg-data:/var/lib/telegram-bot-api   # same path as in the Bot API container: local file access
       - ./work:/app/work
